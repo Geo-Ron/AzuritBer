@@ -50,7 +50,7 @@
 
 //Setting for DHT22------------------------------------
 #define DHTPIN 49                  // temperature sensor DHT22
-#define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
+#define DHTTYPE DHT11   // DHT 22  (AM2302), AM2321
 DHT dht(DHTPIN, DHTTYPE);
 
 //-----------------------------------------------------
