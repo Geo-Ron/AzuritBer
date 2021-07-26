@@ -218,9 +218,9 @@ Mower::Mower() {
   chgChange       = 0;          // Messwertumkehr von - nach +         1 oder 0
   chgNull         = 2;          // Nullduchgang abziehen (1 oder 2)
   // ------  charging station ---------------------------
-  stationRevDist     = 50;    // charge station reverse 50 cm
-  stationRollAngle    = 45;    // charge station roll after reverse
-  stationForwDist    = 30;    // charge station accel distance cm
+  stationRevDist     = 110;    // charge station reverse 50 cm
+  stationRollAngle    = 90;    // charge station roll after reverse
+  stationForwDist    = 50;    // charge station accel distance cm
   stationCheckDist   = 2;    // charge station  check distance to be sure voltage is OK cm
   UseBumperDock = true; //bumper is pressed when docking or not
   dockingSpeed   =  60;   //speed docking is (percent of maxspeed)
