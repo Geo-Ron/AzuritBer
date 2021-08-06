@@ -2094,7 +2094,9 @@ void Robot::setup()  {
     setNextState(STATE_FORWARD_ODO, 0);
   }
 
+if(DHT22Use){
   dht.begin();
+}
   nextTimeReadDHT22 = millis() + 15000; //read only after all the setting of the mower are OK
 
   stateStartTime = millis();
@@ -2119,7 +2121,7 @@ void Robot::setup()  {
   // watchdog enable at the end of the setup
   if (Enable_DueWatchdog) {
     Console.println ("Watchdog is enable and set to 3 secondes");
-    watchdogEnable(8000);// Watchdog trigger after  3 sec if not reseted.
+    watchdogEnable(3000);// Watchdog trigger after  3 sec if not reseted.
 
   }
   else
@@ -4848,6 +4850,10 @@ void Robot::readDHT22() {
   //read only the temperature when no motor control.
   // Reading temperature or humidity takes about 250 milliseconds!
   // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
+  if (!DHT22Use)
+  {
+    return;
+  }
   if ((DHT22Use) && (millis() > nextTimeReadDHT22)) { //read only each 60 Secondes
     nextTimeReadDHT22 = nextTimeReadDHT22 + 60000;
     humidityDht = dht.readHumidity();
@@ -5752,6 +5758,9 @@ void Robot::loop()  {
       break;
 
     case STATE_PERI_OUT_STOP:
+    //RonPeeters request
+      checkCurrent();
+      checkBumpers();
       motorControlOdo();
       if (((odometryRight >= stateEndOdometryRight) && (odometryLeft >= stateEndOdometryLeft)))
         if (motorLeftPWMCurr == 0 && motorRightPWMCurr == 0)  { //wait until the 2 motors completly stop because rotation is inverted
