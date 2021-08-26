@@ -219,7 +219,7 @@ Robot::Robot() {
   //nextTimeSonar = 0;
   nextTimeBattery = 0;
   nextTimeCheckBattery = 0;
-  nextTimePerimeter = 0;
+  nextTimePerimeter = millis() + 15000; //Else error at boot
   nextTimeLawnSensor = 0;
   nextTimeLawnSensorCheck = 0;
   nextTimeTimer = millis() + 60000;
@@ -2131,8 +2131,7 @@ if(DHT22Use){
 
   nextTimeInfo = millis();
 
- 
-
+  setNextState(STATE_OFF, 0); //Always start at Off
 }
 
 
