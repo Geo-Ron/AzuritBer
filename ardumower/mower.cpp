@@ -297,9 +297,9 @@ ISR(PCINT2_vect)
 }
 
 
-NewPing NewSonarLeft(pinSonarLeftTrigger, pinSonarLeftEcho, 110);
-NewPing NewSonarRight(pinSonarRightTrigger, pinSonarRightEcho, 110);
-NewPing NewSonarCenter(pinSonarCenterTrigger, pinSonarCenterEcho, 110);
+NewPing NewSonarLeft(pinSonarLeftTrigger, pinSonarLeftEcho, 250);
+NewPing NewSonarRight(pinSonarRightTrigger, pinSonarRightEcho, 250);
+NewPing NewSonarCenter(pinSonarCenterTrigger, pinSonarCenterEcho, 250);
 
 
 

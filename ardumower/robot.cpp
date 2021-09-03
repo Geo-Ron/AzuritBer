@@ -4591,7 +4591,7 @@ void Robot::checkSonarPeriTrack() {
   //if (sonarCenterUse) sonarDistCenter = readSensor(SEN_SONAR_CENTER);
 
   //if (sonarDistCenter < 30 || sonarDistCenter > 150) sonarDistCenter = NO_ECHO; //need to be adjust if sonar is directly in front of mower 25Cm in my case
-  if (sonarDistRight < 30 || sonarDistRight > 150) sonarDistRight = NO_ECHO; // Object is too close to the sensor JSN SR04T can't read <20 CM . Sensor value is useless
+  if (sonarDistRight < 30 || sonarDistRight > 250) sonarDistRight = NO_ECHO; // Object is too close to the sensor JSN SR04T can't read <20 CM . Sensor value is useless
   //if (sonarDistLeft < 30 || sonarDistLeft  > 150) sonarDistLeft = NO_ECHO;
 
   //disabled the left sonar during tracking with this line
@@ -4628,9 +4628,12 @@ void Robot::checkSonar() {
 
   if (stateCurr == STATE_OFF) return; //avoid the mower move when testing
 
-  if (sonarDistCenter < 25 || sonarDistCenter > 90) sonarDistCenter = NO_ECHO; //need to be adjust if sonar is directly in front of mower 25Cm in my case
-  if (sonarDistRight < 25 || sonarDistRight > 90) sonarDistRight = NO_ECHO; // Object is too close to the sensor JSN SR04T can't read <20 CM . Sensor value is useless
-  if (sonarDistLeft < 25 || sonarDistLeft  > 90) sonarDistLeft = NO_ECHO;
+  if (sonarDistCenter < sonarToFrontDist || sonarDistCenter > 250)
+    sonarDistCenter = NO_ECHO;                                               //need to be adjust if sonar is directly in front of mower 25Cm in my case
+  if (sonarDistRight < sonarToFrontDist || sonarDistRight > 250)
+    sonarDistRight = NO_ECHO; // Object is too close to the sensor JSN SR04T can't read <20 CM . Sensor value is useless
+  if (sonarDistLeft < sonarToFrontDist || sonarDistLeft > 250)
+    sonarDistLeft = NO_ECHO;
 
   if (((sonarDistCenter != NO_ECHO) && (sonarDistCenter < sonarTriggerBelow))  ||  ((sonarDistRight != NO_ECHO) && (sonarDistRight < sonarTriggerBelow)) ||  ((sonarDistLeft != NO_ECHO) && (sonarDistLeft < sonarTriggerBelow))  ) {
     setBeeper(1000, 500, 500, 60, 60);
