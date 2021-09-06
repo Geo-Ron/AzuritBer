@@ -297,6 +297,10 @@ void RemoteControl::processTestingMenu(String pfodCmd)
     sendTestOdoMenu(false);
   else if (pfodCmd == "te02")
     sendCompassMenu(false);
+  else if (pfodCmd == "te03")
+    sendTestTasksMenu(false);
+  else if (pfodCmd == "te04")
+    sendTestTasksMenu(false);
   else
     sendTestingMenu(true);
 }
@@ -1333,7 +1337,9 @@ void RemoteControl::sendCommandMenu(boolean update) {
   serialPort->print(F("|ra~Start Now in Auto mode"));
   serialPort->println(F("|rb~Actual Status is "));
   serialPort->print(robot->statusName());
-  serialPort->println(F("|rs~Actual State is "));
+  serialPort->println(F("|rb~Actual Task is "));
+  serialPort->print(robot->taskName());
+  serialPort->println(F("|rs~Actual State/Action is "));
   serialPort->print(robot->stateName());
   serialPort->println(F("|rm~Mowing is "));
   sendOnOff(robot->motorMowEnable);
@@ -1928,7 +1934,6 @@ boolean RemoteControl::readSerial() {
       else if (pfodCmd == "in") sendInfoMenu(false);
       else if (pfodCmd == "te")
         sendTestingMenu(false);
-
       else if (pfodCmd.startsWith("a")) processMotorMenu(pfodCmd);
       else if (pfodCmd.startsWith("b")) processBumperMenu(pfodCmd);
       else if (pfodCmd.startsWith("c")) processCompassMenu(pfodCmd);
@@ -1948,6 +1953,10 @@ boolean RemoteControl::readSerial() {
       else if (pfodCmd.startsWith("q")) processGPSMenu(pfodCmd);
       else if (pfodCmd.startsWith("r")) processCommandMenu(pfodCmd);
       else if (pfodCmd.startsWith("s")) processSettingsMenu(pfodCmd);
+      else if (pfodCmd.startsWith("te03"))
+        processTestTasksMenu(pfodCmd);
+      else if (pfodCmd.startsWith("te04"))
+        processTestTasksMenu(pfodCmd);
       else if (pfodCmd.startsWith("t")) processDateTimeMenu(pfodCmd);
       else if (pfodCmd.startsWith("u")) processDropMenu(pfodCmd);
       else if (pfodCmd.startsWith("v")) processInfoMenu(pfodCmd);
