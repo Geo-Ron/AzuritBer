@@ -131,7 +131,7 @@ enum {
   STATE_FORWARD,      // drive forward
   STATE_ROLL,         // drive roll right/left
   STATE_REVERSE,      // drive reverse
-  STATE_CIRCLE,       // drive circle
+  STATE_ARC,          // drive circle, drive an arc that can be 360 degrees to complete a circle
   STATE_ERROR,        // error
   STATE_PERI_FIND,    // perimeter find
   STATE_PERI_TRACK,   // perimeter track
@@ -219,29 +219,31 @@ enum { CONSOLE_SENSOR_COUNTERS, CONSOLE_SENSOR_VALUES, CONSOLE_PERIMETER, CONSOL
 // These have a set of states, the result in to the desired output
 enum
 {
-  DRIVE, // Drive forward and keep heading
-  TURN,  //change lane, or direction
+  WAITING,
+      DRIVE, // Drive forward and keep heading
+  TURN,      //change lane, or direction
   AVOID_OBSTACLE,
   // LEAVE_STATION, //leave station is part of GOTO_START
   GOTO_START,
   GOTO_STATION,
   GOTO_NEW_AREA,
   // CHANGE_LANE, //change lane is part of turn
-  CHARGE,
-  WAITING
+  CHARGE
 };
 
 //Define the object 
 struct taskaction_t
 {
   byte state;
-  int DistanceRobot;      //Distance in cm
-  int DistanceWheelLeft;  //Calculated Distance in cm
-  int DistanceWheelRight; //Calculated Distance in cm
-  int SpeedWheelLeft;     //Target wheel speed in rpm
-  int SpeedWheelRight;    //Target wheel speed in rpm
-  int Heading;            //heading to roll to
-  int Angle;              //Angle to turn
+int Distance;                 //Distance in cm , 0 if not set
+  int Diameter;               // Diameter of the circle to rotate in cm. 0 if not set
+  int Speed;                  // Speed in RPM
+  // int DistanceWheelLeft;  //Calculated Distance in cm, -10 if not set
+  // int DistanceWheelRight; //Calculated Distance in cm, -1 if not set
+  // int SpeedWheelLeft;     //Target wheel speed in rpm, always defined
+  // int SpeedWheelRight;    //Target wheel speed in rpm, always defined
+  int Heading;            //heading to roll to, -720 when not set
+  int Angle;              //Angle to turn, -720 when not set
   enum Result
   {
     NotStarted,
@@ -258,12 +260,15 @@ struct taskaction_t
     mowerCurrent,
     Tilt,
     GPS,
-    highGrass
+    highGrass,
+    Manual
   };
   int ActualDistanceWheelLeft;
   int ActualDistanceWheelRight;
 };
 typedef struct taskaction_t taskaction_t;
+
+
 
 #define MAX_TIMERS 5
 
@@ -291,6 +296,9 @@ class Robot
     char* stateName();
     char* statusName();
     char *taskName();
+    char *nextStateName();
+    taskaction_t TaskActions[];
+    int TaskActionIndex;
 
     unsigned long stateStartTime;
     unsigned long stateEndTime;
@@ -329,7 +337,8 @@ class Robot
     int odometryTicksPerRevolution ;   // encoder ticks per one full resolution
     float odometryTicksPerCm ;  // encoder ticks per cm
     float odometryWheelBaseCm ;    // wheel-to-wheel distance (cm)
-    int odometryLeft ;   // left wheel counter
+    float odometryWheelDiameterCm; // wheel diameter. not saved, only used for calculating
+     int odometryLeft; // left wheel counter
     int odometryRight ;  // right wheel counter
     boolean odometryLeftLastState;
     boolean odometryLeftLastState2;

@@ -311,6 +311,16 @@ void RemoteControl::sendTestTasksMenu(boolean update)
     serialPort->print("{:");
   else
     serialPort->print(F("{.Test Tasks"));
+  serialPort->println(F("|te0390~Current Job (Status) "));
+  serialPort->print(robot->statusName());
+  serialPort->println(F("|te0391~Current Task "));
+  serialPort->print(robot->taskName());
+  serialPort->println(F("|te0392~Current Action "));
+  serialPort->print(robot->stateName());
+  serialPort->println(F("|te0393~Current TaskAction Index "));
+  serialPort->print(robot->TaskActionIndex);
+  serialPort->println(F("|te0394~Next Action "));
+  serialPort->print(robot->nextStateName());
   // if ((robot->stateCurr == STATE_OFF) || (robot->stateCurr == STATE_STATION)) //deactivate the save setting if the mower is not OFF to avoid zombie
   // {
   //   serialPort->print(F("|sz~Save settings|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
@@ -1042,6 +1052,7 @@ void RemoteControl::sendOdometryMenu(boolean update) {
   sendSlider("l04", F("Ticks per one full revolution"), robot->odometryTicksPerRevolution, "", 1, 2800, 500);
   sendSlider("l03", F("Ticks per cm"), robot->odometryTicksPerCm, "", 0.1, 60, 10);
   sendSlider("l02", F("Wheel base cm"), robot->odometryWheelBaseCm, "", 0.1, 50, 5);
+  sendSlider("l05", F("Wheel diameter cm"), robot->odometryWheelDiameterCm, "", 0.1, 50, 5);
   serialPort->println("}");
 }
 
@@ -1050,7 +1061,10 @@ void RemoteControl::processOdometryMenu(String pfodCmd) {
   if (pfodCmd.startsWith("l03")) processSlider(pfodCmd, robot->odometryTicksPerCm, 0.1);
   else if (pfodCmd.startsWith("l02")) processSlider(pfodCmd, robot->odometryWheelBaseCm, 0.1);
   else if (pfodCmd.startsWith("l04")) processSlider(pfodCmd, robot->odometryTicksPerRevolution, 1);
-
+  else if (pfodCmd.startsWith("l04"))
+    processSlider(pfodCmd, robot->odometryTicksPerRevolution, 1);
+  else if (pfodCmd.startsWith("l05"))
+    processSlider(pfodCmd, robot->odometryWheelDiameterCm, 1);
 
   sendOdometryMenu(true);
 }
