@@ -2845,7 +2845,7 @@ void Robot::setNewTask(byte newTask, byte rollBack)
   if(TaskActionIndex == -1)
   {
     // task has completed all actions
-    switch (currStatus)
+    switch (statusCurr)
     {
     case TESTING:
       newTask = WAITING;
@@ -2871,7 +2871,8 @@ void Robot::setNewTask(byte newTask, byte rollBack)
         {STATE_ROLL, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0},
         {STATE_ARC, 0, 100, motorSpeedMaxRpm / 3, imuDriveHeading, 180, NotStarted, None, 0, 0},
         {STATE_ARC, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0}};
-    setNextState(TaskActions[0].state) break;
+    setNextState(TaskActions[0].state, 0);
+    break;
   case TURN:
     TaskActions[] = {
         {STATE_REVERSE, 5, -1, -1, -motorSpeedMaxRpm, -motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0},
