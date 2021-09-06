@@ -323,7 +323,7 @@ void RemoteControl::sendTestTasksMenu(boolean update)
   // }
   serialPort->println(F("|te0301~DRIVE|te0302~Avoid Obstacle"));
   sendSlider("te0303", F("Avoidance radius"), robot->imuDriveHeading, "meter", 0.1, 5, 0);
-  serialPort->println(F("|te0304~Turn}"));
+  serialPort->println(F("|te0304~Turn"));
   sendSlider("te0305", F("Turn angle"), robot->imuDriveHeading, "Deg", 1, 360, -360);
   serialPort->println(F("|te0306~Go to Start}"));
 }
@@ -1957,6 +1957,8 @@ boolean RemoteControl::readSerial() {
         processTestTasksMenu(pfodCmd);
       else if (pfodCmd.startsWith("te04"))
         processTestTasksMenu(pfodCmd);
+      else if (pfodCmd.startsWith("te"))
+        processTestingMenu(pfodCmd);
       else if (pfodCmd.startsWith("t")) processDateTimeMenu(pfodCmd);
       else if (pfodCmd.startsWith("u")) processDropMenu(pfodCmd);
       else if (pfodCmd.startsWith("v")) processInfoMenu(pfodCmd);
