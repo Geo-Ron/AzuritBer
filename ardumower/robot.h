@@ -231,44 +231,69 @@ enum
   CHARGE
 };
 
-//Define the object 
+// TaskAction Result
+enum ActionResult
+{
+  NotStarted,
+  Success,
+  Failure
+};
+
+// TaskAction Trigger
+enum ActionResultTrigger
+{
+  None,
+  PerimeterTrigger,
+  SonarTrigger,
+  BumperTrigger,
+  motorCurrentTrigger,
+  mowerCurrentTrigger,
+  TiltTrigger,
+  GPSTrigger,
+  highGrassTrigger,
+  ManualTrigger,
+  SchedulerTrigger,
+  IMUTrigger
+};
+
+// Define the object
 struct taskaction_t
 {
   byte state;
-int Distance;                 //Distance in cm , 0 if not set
-  int Diameter;               // Diameter of the circle to rotate in cm. 0 if not set
-  int Speed;                  // Speed in RPM
+  int Distance; //Distance in cm , 0 if not set
+  int Diameter; // Diameter of the circle to rotate in cm. 0 if not set
+  int Speed;    // Speed in RPM
   // int DistanceWheelLeft;  //Calculated Distance in cm, -10 if not set
   // int DistanceWheelRight; //Calculated Distance in cm, -1 if not set
   // int SpeedWheelLeft;     //Target wheel speed in rpm, always defined
   // int SpeedWheelRight;    //Target wheel speed in rpm, always defined
-  int Heading;            //heading to roll to, -720 when not set
-  int Angle;              //Angle to turn, -720 when not set
-  enum Result
-  {
-    NotStarted,
-    Success,
-    Failure
-  };
-  enum ResultTrigger
-  {
-    None,
-    Perimeter,
-    Sonar,
-    Bumper,
-    motorCurrent,
-    mowerCurrent,
-    Tilt,
-    GPS,
-    highGrass,
-    Manual
-  };
+  int Heading; //heading to roll to, -720 when not set
+  int Angle;   //Angle to turn, -720 when not set
+  ActionResult Result;
+  ActionResultTrigger ResultTrigger;
   int ActualDistanceWheelLeft;
   int ActualDistanceWheelRight;
 };
 typedef struct taskaction_t taskaction_t;
 
-
+// class TaskAction_c
+// {
+// public:
+//   byte state;
+//   int Distance; //Distance in cm , 0 if not set
+//   int Diameter; // Diameter of the circle to rotate in cm. 0 if not set
+//   int Speed;    // Speed in RPM
+//   // int DistanceWheelLeft;  //Calculated Distance in cm, -10 if not set
+//   // int DistanceWheelRight; //Calculated Distance in cm, -1 if not set
+//   // int SpeedWheelLeft;     //Target wheel speed in rpm, always defined
+//   // int SpeedWheelRight;    //Target wheel speed in rpm, always defined
+//   int Heading; //heading to roll to, -720 when not set
+//   int Angle;   //Angle to turn, -720 when not set
+//   ActionResult Result;
+//   ActionResultTrigger ResultTrigger;
+//   int ActualDistanceWheelLeft;
+//   int ActualDistanceWheelRight;
+// };
 
 #define MAX_TIMERS 5
 
@@ -297,7 +322,7 @@ class Robot
     char* statusName();
     char *taskName();
     char *nextStateName();
-    taskaction_t TaskActions[];
+    taskaction_t TaskActions[1];
     int TaskActionIndex;
 
     unsigned long stateStartTime;
@@ -846,9 +871,10 @@ class Robot
 
     //Task Logic
     virtual void setNewTask(byte newTask, byte rollBack);
+    virtual void requestNextState();
 
-        // state machine
-        virtual void setNextState(byte stateNew, byte dir);
+    // state machine
+    virtual void setNextState(byte stateNew, byte dir);
 
     // motor
     virtual void setMotorPWM(int pwmLeft, int pwmRight, boolean useAccel);

@@ -112,9 +112,7 @@ Robot::Robot() {
 
   stateLast = stateCurr = stateNext = STATE_OFF;
   statusCurr = WAIT; //initialise the status on power up
-  
-  taskPrevious = taskCurr = WAIT;
-  
+
   stateTime = 0;
   idleTimeSec = 0;
   statsMowTimeTotalStart = false;
@@ -184,6 +182,8 @@ Robot::Robot() {
   taskRollBack = false;
   turnAngle = 0; // the angle to which to turn to
   ArcRadius = 1; //radius of an arc to drive
+  TaskActions[1] = {{STATE_OFF, 0, 0, 0, 0, -720, NotStarted, None, 0, 0}};
+  taskPrevious = taskCurr = WAIT;
 
   perimeterMag = 0;
   perimeterInside = true;
@@ -298,7 +298,8 @@ char *Robot::nextStateName()
 {
   if(TaskActionIndex < (sizeof(TaskActions) / sizeof(TaskActions[0]))-1)
     {
-      return taskNames[TaskActions[TaskActionIndex + 1]];
+      int NextTaskActionIndex = TaskActionIndex + 1;
+      return taskNames[TaskActions[NextTaskActionIndex].state];
     }
   return taskNames[WAITING];
 }
@@ -2890,7 +2891,7 @@ void Robot::requestNextState()
   if (TaskActions[TaskActionIndex].Result = 1)
   {
     TaskActionIndex++;
-    If(TaskActionIndex = sizeof(TaskActions) / sizeof(TaskActions[0]))
+    if(TaskActionIndex = sizeof(TaskActions) / sizeof(TaskActions[0]))
     {
       setNewTask(TaskActions[TaskActionIndex].state, 0)
     }
@@ -2909,6 +2910,10 @@ void Robot::setNextState(byte stateNew, byte dir)
   stateTime = millis() - stateStartTime; //last state duration
   if (stateNew == stateCurr)
     return;
+
+  float RatioSpeedLeft;
+  float RatioSpeedRight;
+  float Direction;
 
   TaskActionIndex++;
   stateTime = millis() - stateStartTime; //last state duration
@@ -2978,15 +2983,15 @@ void Robot::setNextState(byte stateNew, byte dir)
     // stateEndOdometryRight = odometryRight - (odometryTicksPerCm * stationRevDist);
     // stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * stationRevDist);
     // int AngleRotate = TaskActions[TaskActionIndex].Angle ;
-    float RatioSpeedLeft = TaskActions[TaskActionIndex].Angle + 0.5 * odometryWheelBaseCm;
-    float RatioSpeedRight = TaskActions[TaskActionIndex].Angle - 0.5 * odometryWheelBaseCm;
+    RatioSpeedLeft = TaskActions[TaskActionIndex].Angle + 0.5 * odometryWheelBaseCm;
+    RatioSpeedRight = TaskActions[TaskActionIndex].Angle - 0.5 * odometryWheelBaseCm;
     if (TaskActions[TaskActionIndex].Angle != 0)
     {
-      int Direction = TaskActions[TaskActionIndex].Angle / abs(TaskActions[TaskActionIndex].Angle);
+      Direction = TaskActions[TaskActionIndex].Angle / abs(TaskActions[TaskActionIndex].Angle);
     }
     else
     {
-      int Direction = 1;
+      Direction = 1;
     }
     motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * TaskActions[TaskActionIndex].Speed;
     motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * TaskActions[TaskActionIndex].Speed;
