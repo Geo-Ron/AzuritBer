@@ -113,9 +113,11 @@ class RemoteControl
     void processTestOdoMenu(String pfodCmd);
     void processManualMenu(String pfodCmd);
     void processSettingsMenu(String pfodCmd);
+    void sendTestingMenu(boolean update);
+    void processTestingMenu(String pfodCmd);
 
-    // plotting
-    void sendPlotMenu(boolean update);
+        // plotting
+        void sendPlotMenu(boolean update);
 
     // settings
     void sendSettingsMenu(boolean update);
@@ -140,6 +142,10 @@ class RemoteControl
 
     void sendByLaneMenu(boolean update);
     void processByLaneMenu(String pfodCmd);
+
+//testing menu
+    void sendTestTasksMenu(boolean update);
+    void processTestTasksMenu(String pfodCmd);
 
     void processMotorMenu(String pfodCmd);
     void processErrorMenu(String pfodCmd);

@@ -81,9 +81,21 @@ char* statusNames[] = {"WAIT", "NORMALMOWING", "SPIRALEMOWING", "BACKTOSTATION",
                       };
 
 
-char* mowPatternNames[] = {"RAND", "LANE",  "WIRE" , "ZIGZAG"};
+char* mowPatternNames[] = {"RAND", "LANE",  "WIRE" , "ZIGZAG" , "SPIRAL", "SQUARE"};
 char* consoleModeNames[] = {"sen_counters", "sen_values", "perimeter", "off", "Tracking"};
 
+// human labels to the defined enum tasks
+char *taskNames[] = {
+    "DRIVE",
+    "TURN",
+    "AVOID_OBSTACLE",
+    // "LEAVE_STATION",
+    "GOTO_START",
+    "GOTO_STATION"
+    "GOTO_NEW_AREA",
+    // "CHANGE LANE",
+    "CHARGE",
+    "WAITING"};
 
 unsigned long StartReadAt;
 int distance_find;
@@ -100,7 +112,9 @@ Robot::Robot() {
 
   stateLast = stateCurr = stateNext = STATE_OFF;
   statusCurr = WAIT; //initialise the status on power up
-
+  
+  taskPrevious = taskCurr = WAIT;
+  
   stateTime = 0;
   idleTimeSec = 0;
   statsMowTimeTotalStart = false;
@@ -167,6 +181,9 @@ Robot::Robot() {
   imuRollDir = LEFT;
   rollDir = LEFT;
 
+  taskRollBack = false;
+  turnAngle = 0; // the angle to which to turn to
+  ArcRadius = 1; //radius of an arc to drive
 
   perimeterMag = 0;
   perimeterInside = true;
@@ -272,6 +289,10 @@ char* Robot::statusName() {
   return statusNames[statusCurr];
 }
 
+char *Robot::taskName()
+{
+  return taskNames[taskCurr];
+}
 
 char* Robot::mowPatternName() {
   return mowPatternNames[mowPatternCurr];
@@ -2806,234 +2827,260 @@ void Robot::setDefaults() {
   motorMowEnable = false;
 }
 
+// start a new task
+void Robot::setNewTask(byte newTask, byte rollBack)
+{
+  if (newTask == taskCurr) return;
+  taskPrevious = taskCurr;
+  switch (newTask)
+  {
+  case DRIVE:
+    setNextState(STATE_FORWARD_ODO, 0);
+    break;
+  default:
+    setNextState(STATE_OFF, 0);
+    break;
+  } // end switch (newTask)
+} // end setNewTask
+
 // set state machine new state
 // called *ONCE* to set to a *NEW* state
-void Robot::setNextState(byte stateNew, byte dir) {
+void Robot::setNextState(byte stateNew, byte dir)
+{
   stateTime = millis() - stateStartTime; //last state duration
-  if (stateNew == stateCurr) return;
+  if (stateNew == stateCurr)
+    return;
 
   // evaluate new state
   stateNext = stateNew;
   rollDir = dir;
 
-  switch (stateNew) {
+  switch (stateNew)
+  {
 
-    case STATE_FORWARD:
-      if ((stateCurr == STATE_STATION_REV) || (stateCurr == STATE_STATION_ROLL) || (stateCurr == STATE_STATION_CHECK) ) return;
-      if ((stateCurr == STATE_STATION) || (stateCurr == STATE_STATION_CHARGING)) {
-        //stateNew = STATE_STATION_CHECK;
-        setActuator(ACT_CHGRELAY, 0);
-        motorMowEnable = false;
-      }
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm; //use RPM instead of PWM to straight line
+  case STATE_FORWARD:
+    if ((stateCurr == STATE_STATION_REV) || (stateCurr == STATE_STATION_ROLL) || (stateCurr == STATE_STATION_CHECK))
+      return;
+    if ((stateCurr == STATE_STATION) || (stateCurr == STATE_STATION_CHARGING))
+    {
+      //stateNew = STATE_STATION_CHECK;
+      setActuator(ACT_CHGRELAY, 0);
+      motorMowEnable = false;
+    }
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm; //use RPM instead of PWM to straight line
+    motorRightSpeedRpmSet = motorSpeedMaxRpm;
+
+    // motorLeftPID.reset();
+    // motorRightPID.reset();
+    //motorLeftRpmCurr = motorRightRpmCurr = 0 ;
+    statsMowTimeTotalStart = true;
+
+    break;
+
+  case STATE_FORWARD_ODO:
+    if (statusCurr != NORMAL_MOWING)
+    {
+      statusCurr = NORMAL_MOWING;
+      if (RaspberryPIUse)
+        MyRpi.SendStatusToPi();
+    }
+
+    UseAccelRight = 0;
+    UseAccelLeft = 0;
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
+    motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+    //bber60
+
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 30000); // set a very large distance 300 ml for random mowing
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 30000);
+    if ((mowPatternCurr == MOW_LANES) && (!justChangeLaneDir))
+    {                                                                                               //it s a not new lane so limit the forward distance
+      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * actualLenghtByLane * 100); //limit the lenght
+      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * actualLenghtByLane * 100);
+    }
+
+    OdoRampCompute();
+
+    statsMowTimeTotalStart = true;
+
+    break;
+
+  case STATE_ESCAPE_LANE:
+    ShowMessageln("Mowing in Half lane width");
+    //it's approximation try to go into a parcel already mowed little on left or right
+    halfLaneNb = halfLaneNb + 1; //to avoid repetition the state is lauch only if halfLaneNb=0
+    UseAccelLeft = 0;
+    UseBrakeLeft = 0;
+    UseAccelRight = 0;
+    UseBrakeRight = 0;
+    if (rollDir == RIGHT)
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
       motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight + (odometryTicksPerCm * odometryWheelBaseCm * 2);
+      stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * odometryWheelBaseCm * 1.5);
+    }
+    else
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
+      stateEndOdometryRight = odometryRight + (odometryTicksPerCm * odometryWheelBaseCm * 1.5);
+      stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * odometryWheelBaseCm * 2);
+    }
 
+    OdoRampCompute();
 
-      // motorLeftPID.reset();
-      // motorRightPID.reset();
-      //motorLeftRpmCurr = motorRightRpmCurr = 0 ;
-      statsMowTimeTotalStart = true;
+    break;
 
-      break;
+  case STATE_STATION_REV: //when start in auto mode the mower first reverse to leave the station
 
+    if (!CompassUse)
+    { //set the yaw heading to zero when mower leave station if compass is not use
+      ShowMessageln("Imu Heading is reset to Station Heading");
+      //CompassGyroOffset=distancePI( scalePI(ypr.yaw-CompassGyroOffset), comYaw);
+      imu.CompassGyroOffset = scalePI(-imu.ypr.yaw + stationHeading / 180 * PI);
+    }
 
-    case STATE_FORWARD_ODO:
-      if (statusCurr != NORMAL_MOWING) {
-        statusCurr = NORMAL_MOWING;
-        if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      }
+    statusCurr = TRACK_TO_START;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2;
+    stateEndOdometryRight = odometryRight - (odometryTicksPerCm * stationRevDist);
+    stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * stationRevDist);
+    OdoRampCompute();
+    break;
 
-      UseAccelRight = 0;
-      UseAccelLeft = 0;
-      UseBrakeLeft = 0;
-      UseBrakeRight = 0;
-      motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-      //bber60
+  case STATE_STATION_ROLL: //when start in auto after mower reverse it roll for this angle
+    if (mowPatternCurr == MOW_LANES)
+      AngleRotate = 90;
+    else
+      AngleRotate = random(30, 160);
+    if (startByTimer)
+      AngleRotate = stationRollAngle;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
+    stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    OdoRampCompute();
 
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 30000);// set a very large distance 300 ml for random mowing
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 30000);
-      if ((mowPatternCurr == MOW_LANES) && (!justChangeLaneDir)) { //it s a not new lane so limit the forward distance
-        stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * actualLenghtByLane * 100); //limit the lenght
-        stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * actualLenghtByLane * 100);
-      }
+    break;
 
-      OdoRampCompute();
+  case STATE_STATION_FORW: //when start in auto after mower  roll this state accel the 2 wheel before forward
 
-      statsMowTimeTotalStart = true;
+    justChangeLaneDir = true;
+    UseAccelLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 60); //60CM to accel
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 60);
+    OdoRampCompute();
+    //motorMowEnable = true;
 
-      break;
+    break;
 
-    case STATE_ESCAPE_LANE:
-      ShowMessageln("Mowing in Half lane width");
-      //it's approximation try to go into a parcel already mowed little on left or right
-      halfLaneNb = halfLaneNb + 1; //to avoid repetition the state is lauch only if halfLaneNb=0
-      UseAccelLeft = 0;
-      UseBrakeLeft = 0;
-      UseAccelRight = 0;
-      UseBrakeRight = 0;
-      if (rollDir == RIGHT) {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-        stateEndOdometryRight = odometryRight + (odometryTicksPerCm * odometryWheelBaseCm * 2) ;
-        stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * odometryWheelBaseCm * 1.5 ) ;
-      }
-      else
-      {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm / 2 ;
-        stateEndOdometryRight = odometryRight + (odometryTicksPerCm * odometryWheelBaseCm * 1.5 ) ;
-        stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * odometryWheelBaseCm * 2) ;
-      }
+  case STATE_STATION_CHECK:
+    //bber3
+    if (statusCurr == WIRE_MOWING)
+    { //it is the last status
+      ShowMessage("Total distance drive ");
+      ShowMessage(totalDistDrive / 100);
+      ShowMessageln(" meters ");
+      ShowMessage("Total duration ");
+      ShowMessage(int(millis() - stateStartTime) / 1000);
+      ShowMessageln(" secondes ");
+      nextTimeTimer = millis() + 1200000; // only check again the timer after 20 minutes to avoid repetition
+    }
+    delayToReadVoltageStation = millis() + 1500; //the battery is read only each 500 ms so need a duration to be sure we have the last voltage
+    //bber14 no accel here ?????
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
+    stateEndOdometryRight = odometryRight + (odometryTicksPerCm * stationCheckDist);
+    stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * stationCheckDist);
+    OdoRampCompute();
 
+    break;
 
-      OdoRampCompute();
+  //not use actually
+  case STATE_PERI_ROLL:
+    stateEndTime = millis() + perimeterTrackRollTime + motorZeroSettleTime;
+    if (dir == RIGHT)
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
+      motorRightSpeedRpmSet = -motorLeftSpeedRpmSet;
+    }
+    else
+    {
+      motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
+      motorLeftSpeedRpmSet = -motorRightSpeedRpmSet;
+    }
+    break;
 
-      break;
+  case STATE_PERI_OBSTACLE_REV:
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriObstacleRev);
+    stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriObstacleRev);
+    OdoRampCompute();
+    break;
+  case STATE_PERI_OBSTACLE_ROLL:
+    AngleRotate = 45;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    OdoRampCompute();
+    break;
 
+  case STATE_PERI_OBSTACLE_FORW:
+    UseAccelLeft = 1;
+    UseBrakeLeft = 0;
+    UseAccelRight = 1;
+    UseBrakeRight = 0;
+    motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriObstacleForw); //50cm
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriObstacleForw);
+    OdoRampCompute();
 
-    case STATE_STATION_REV: //when start in auto mode the mower first reverse to leave the station
+    break;
 
-      if (!CompassUse) { //set the yaw heading to zero when mower leave station if compass is not use
-        ShowMessageln("Imu Heading is reset to Station Heading");
-        //CompassGyroOffset=distancePI( scalePI(ypr.yaw-CompassGyroOffset), comYaw);
-        imu.CompassGyroOffset = scalePI(-imu.ypr.yaw + stationHeading / 180 * PI);
+  case STATE_PERI_OBSTACLE_AVOID:
+    UseAccelLeft = 0;
+    UseBrakeLeft = 0;
+    UseAccelRight = 0;
+    UseBrakeRight = 0;
+    motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriObstacleAvoid);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriObstacleAvoid);
+    OdoRampCompute();
 
-      }
-
-      statusCurr = TRACK_TO_START;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2 ;
-      stateEndOdometryRight = odometryRight - (odometryTicksPerCm * stationRevDist);
-      stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * stationRevDist);
-      OdoRampCompute();
-      break;
-
-    case STATE_STATION_ROLL:  //when start in auto after mower reverse it roll for this angle
-      if (mowPatternCurr == MOW_LANES)       AngleRotate = 90;
-      else AngleRotate = random(30, 160);
-      if (startByTimer) AngleRotate = stationRollAngle;
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2 ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2 ;
-      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      OdoRampCompute();
-
-      break;
-
-    case STATE_STATION_FORW: //when start in auto after mower  roll this state accel the 2 wheel before forward
-
-      justChangeLaneDir = true;
-      UseAccelLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeLeft = 0;
-      UseBrakeRight = 0;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 60) ;//60CM to accel
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 60) ;
-      OdoRampCompute();
-      //motorMowEnable = true;
-
-      break;
-
-    case STATE_STATION_CHECK:
-      //bber3
-      if (statusCurr == WIRE_MOWING) { //it is the last status
-        ShowMessage("Total distance drive ");
-        ShowMessage(totalDistDrive / 100);
-        ShowMessageln(" meters ");
-        ShowMessage("Total duration ");
-        ShowMessage(int(millis() - stateStartTime) / 1000);
-        ShowMessageln(" secondes ");
-        nextTimeTimer = millis() + 1200000; // only check again the timer after 20 minutes to avoid repetition
-      }
-      delayToReadVoltageStation = millis() + 1500; //the battery is read only each 500 ms so need a duration to be sure we have the last voltage
-      //bber14 no accel here ?????
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
-      stateEndOdometryRight = odometryRight + (odometryTicksPerCm * stationCheckDist);
-      stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * stationCheckDist);
-      OdoRampCompute();
-
-
-      break;
-
-    //not use actually
-    case STATE_PERI_ROLL:
-      stateEndTime = millis() + perimeterTrackRollTime + motorZeroSettleTime;
-      if (dir == RIGHT) {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
-        motorRightSpeedRpmSet = -motorLeftSpeedRpmSet;
-      } else {
-        motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
-        motorLeftSpeedRpmSet = -motorRightSpeedRpmSet;
-      }
-      break;
-
-    case STATE_PERI_OBSTACLE_REV:
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5 ;
-      stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriObstacleRev);
-      stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriObstacleRev);
-      OdoRampCompute();
-      break;
-    case STATE_PERI_OBSTACLE_ROLL:
-      AngleRotate = 45;
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5 ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5 ;
-      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      OdoRampCompute();
-      break;
-
-    case STATE_PERI_OBSTACLE_FORW:
-      UseAccelLeft = 1;
-      UseBrakeLeft = 0;
-      UseAccelRight = 1;
-      UseBrakeRight = 0;
-      motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriObstacleForw);//50cm
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriObstacleForw);
-      OdoRampCompute();
-
-      break;
-
-    case STATE_PERI_OBSTACLE_AVOID:
-      UseAccelLeft = 0;
-      UseBrakeLeft = 0;
-      UseAccelRight = 0;
-      UseBrakeRight = 0;
-      motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriObstacleAvoid);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriObstacleAvoid);
-      OdoRampCompute();
-
-
-
-      break;
-    /*
+    break;
+  /*
         case STATE_STATION_AVOID:
           UseAccelLeft = 0;
           UseBrakeLeft = 0;
@@ -3047,405 +3094,412 @@ void Robot::setNextState(byte stateNew, byte dir) {
 
          break;
     */
-    case STATE_PERI_REV:  //when obstacle in perifind
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight - 1440;
-      stateEndOdometryLeft = odometryLeft - 1440;
-      OdoRampCompute();
-      break;
+  case STATE_PERI_REV: //when obstacle in perifind
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - 1440;
+    stateEndOdometryLeft = odometryLeft - 1440;
+    OdoRampCompute();
+    break;
 
+  case STATE_PERI_OUT_STOP: //in auto mode and forward slow down before stop and reverse
+    //-------------------------------Verify if it's time to change mowing pattern
+    if (mowPatternDuration > mowPatternDurationMax)
+    {
+      ShowMessageln(" mowPatternCurr  change ");
+      mowPatternCurr = (mowPatternCurr + 1) % 2; //change the pattern each x minutes
+      mowPatternDuration = 0;
+    }
+    justChangeLaneDir = !justChangeLaneDir; //use to know if the lane is not limit distance
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm * 0.7; //perimeterSpeedCoeff reduce speed near the wire to 70%
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
 
-    case STATE_PERI_OUT_STOP: //in auto mode and forward slow down before stop and reverse
-      //-------------------------------Verify if it's time to change mowing pattern
-      if (mowPatternDuration > mowPatternDurationMax) {
-        ShowMessageln(" mowPatternCurr  change ");
-        mowPatternCurr = (mowPatternCurr + 1) % 2; //change the pattern each x minutes
-        mowPatternDuration = 0;
-      }
-      justChangeLaneDir = !justChangeLaneDir;  //use to know if the lane is not limit distance
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm * 0.7 ; //perimeterSpeedCoeff reduce speed near the wire to 70%
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
+    break;
 
-      break;
+  case STATE_SONAR_TRIG: //in auto mode and forward slow down before stop and reverse different than stop because reduce speed during a long time and not immediatly
+    justChangeLaneDir = !justChangeLaneDir;
+    distToObstacle = distToObstacle - sonarToFrontDist; //   the distance between sonar and front of mower
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * distToObstacle);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * distToObstacle);
+    OdoRampCompute();
 
+    break;
 
-    case STATE_SONAR_TRIG: //in auto mode and forward slow down before stop and reverse different than stop because reduce speed during a long time and not immediatly
-      justChangeLaneDir = !justChangeLaneDir;
-      distToObstacle = distToObstacle - sonarToFrontDist; //   the distance between sonar and front of mower
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * distToObstacle);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * distToObstacle);
-      OdoRampCompute();
+  case STATE_STOP_TO_FIND_YAW:
 
-      break;
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
 
-    case STATE_STOP_TO_FIND_YAW:
+    break;
 
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
+  case STATE_STOP_ON_BUMPER:
 
-      break;
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    //bber500 to stop immediatly
+    stateEndOdometryRight = odometryRight; // + (int)(odometryTicksPerCm / 6);
+    stateEndOdometryLeft = odometryLeft;   // + (int)(odometryTicksPerCm / 6);
+    OdoRampCompute();
 
-    case STATE_STOP_ON_BUMPER:
+    break;
 
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      //bber500 to stop immediatly
-      stateEndOdometryRight = odometryRight;// + (int)(odometryTicksPerCm / 6);
-      stateEndOdometryLeft = odometryLeft;// + (int)(odometryTicksPerCm / 6);
-      OdoRampCompute();
-
-      break;
-
-    case STATE_PERI_STOP_TOTRACK:
-      //bber100 err here
-      if (statusCurr == TRACK_TO_START) {
-        if (mowPatternCurr == MOW_WIRE) {
-          motorMowEnable = true; //time to start the blade
-          statusCurr = WIRE_MOWING;
-          if (RaspberryPIUse) MyRpi.SendStatusToPi();
-        }
-      }
-      else if (statusCurr == WIRE_MOWING) {
+  case STATE_PERI_STOP_TOTRACK:
+    //bber100 err here
+    if (statusCurr == TRACK_TO_START)
+    {
+      if (mowPatternCurr == MOW_WIRE)
+      {
         motorMowEnable = true; //time to start the blade
+        statusCurr = WIRE_MOWING;
+        if (RaspberryPIUse)
+          MyRpi.SendStatusToPi();
       }
-      else {
-        statusCurr = BACK_TO_STATION;
-        if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      }
+    }
+    else if (statusCurr == WIRE_MOWING)
+    {
+      motorMowEnable = true; //time to start the blade
+    }
+    else
+    {
+      statusCurr = BACK_TO_STATION;
+      if (RaspberryPIUse)
+        MyRpi.SendStatusToPi();
+    }
 
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
-      break;
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
+    break;
 
+  case STATE_PERI_STOP_TOROLL:
+    //imu.run(); //31/08/19 In peritrack the imu is stop so try to add this to start it now and avoid imu tilt error (occur once per week or less) ??????
+    if (statusCurr == TRACK_TO_START)
+    {
+      startByTimer = false;      // cancel because we have reach the start point and avoid repeat search entry
+      justChangeLaneDir = false; //the first lane need to be distance control
+      motorMowEnable = true;     //time to start the blade
+    }
 
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
+    break;
 
+  case STATE_PERI_STOP_TO_FAST_START:
 
-    case STATE_PERI_STOP_TOROLL:
-      //imu.run(); //31/08/19 In peritrack the imu is stop so try to add this to start it now and avoid imu tilt error (occur once per week or less) ??????
-      if (statusCurr == TRACK_TO_START) {
-        startByTimer = false; // cancel because we have reach the start point and avoid repeat search entry
-        justChangeLaneDir = false; //the first lane need to be distance control
-        motorMowEnable = true; //time to start the blade
-      }
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
+    break;
 
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
-      break;
+  case STATE_PERI_STOP_TO_NEWAREA:
+    if ((statusCurr == BACK_TO_STATION) || (statusCurr == TRACK_TO_START))
+    {
+      statusCurr = REMOTE;
+      if (RaspberryPIUse)
+        MyRpi.SendStatusToPi();
+      //startByTimer = false; // ?? not here                         cancel because we have reach the start point and avoid repeat search entry
+      justChangeLaneDir = false; //the first lane need to be distance control
+      perimeterUse = false;      //disable the perimeter use to leave the area
+      ShowMessageln("Stop to read the perimeter wire");
+      rollDir = LEFT;
+    }
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
+    break;
 
-    case STATE_PERI_STOP_TO_FAST_START:
+  case STATE_ROLL1_TO_NEWAREA: // when find a tag the mower roll with new heading and drive in straight line
+    AngleRotate = abs(newtagRotAngle1);
+    newtagRotAngle1Radian = newtagRotAngle1 * PI / 180.0;
+    ShowMessage("Actual Heading ");
+    ShowMessageln(imu.ypr.yaw * 180 / PI);
+    remoteDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
+    ShowMessage("New Remote Heading ");
+    ShowMessageln(remoteDriveHeading * 180 / PI);
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    //Always rotate LEFT to leave mowing area
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+    motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    OdoRampCompute();
+    break;
 
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
-      break;
+  case STATE_ROLL2_TO_NEWAREA: // when find a tag the mower roll with new heading and drive in straight line
+    AngleRotate = newtagRotAngle2;
+    newtagRotAngle1Radian = newtagRotAngle2 * PI / 180.0;
+    ShowMessage("Actual Heading ");
+    ShowMessageln(imu.ypr.yaw * 180 / PI);
+    remoteDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
+    ShowMessage("New Remote Heading ");
+    ShowMessageln(remoteDriveHeading * 180 / PI);
+    if (AngleRotate >= 0)
+    {
+      rollDir = RIGHT;
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+    }
+    else
+    {
+      rollDir = LEFT;
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    }
 
-    case STATE_PERI_STOP_TO_NEWAREA:
-      if ((statusCurr == BACK_TO_STATION) || (statusCurr == TRACK_TO_START)) {
-        statusCurr = REMOTE;
-        if (RaspberryPIUse) MyRpi.SendStatusToPi();
-        //startByTimer = false; // ?? not here                         cancel because we have reach the start point and avoid repeat search entry
-        justChangeLaneDir = false; //the first lane need to be distance control
-        perimeterUse = false; //disable the perimeter use to leave the area
-        ShowMessageln("Stop to read the perimeter wire");
-        rollDir = LEFT;
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
 
-      }
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
-      break;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later  HERE IT CAN BE NEGATIVE WHEN ROLL LEFT
+    stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
 
-    case STATE_ROLL1_TO_NEWAREA:  // when find a tag the mower roll with new heading and drive in straight line
-      AngleRotate = abs(newtagRotAngle1);
-      newtagRotAngle1Radian = newtagRotAngle1 * PI / 180.0;
-      ShowMessage("Actual Heading ");
-      ShowMessageln(imu.ypr.yaw * 180 / PI);
-      remoteDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
-      ShowMessage("New Remote Heading ");
-      ShowMessageln(remoteDriveHeading * 180 / PI);
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      //Always rotate LEFT to leave mowing area
+    OdoRampCompute();
+    break;
+
+  case STATE_DRIVE1_TO_NEWAREA:
+    UseAccelLeft = 1;
+    UseBrakeLeft = 0;
+    UseAccelRight = 1;
+    UseBrakeRight = 0;
+    currDistToDrive = 0; // when use the IMU the distance is not check on each wheel but on averrage
+    // newtagDistance1 is the distance to drive
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * newtagDistance1);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * newtagDistance1);
+    OdoRampCompute();
+
+    break;
+  case STATE_DRIVE2_TO_NEWAREA:
+    UseAccelLeft = 1;
+    UseBrakeLeft = 0;
+    UseAccelRight = 1;
+    UseBrakeRight = 0;
+    currDistToDrive = 0;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * newtagDistance2);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * newtagDistance2);
+    OdoRampCompute();
+    break;
+
+  case STATE_STOP_TO_NEWAREA:
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
+    OdoRampCompute();
+    break;
+
+  case STATE_WAIT_FOR_SIG2:
+    statusCurr = WAITSIG2;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    //when the raspberry receive this new status it start the sender with the correct area sigcode
+    totalDistDrive = 0; //reset the distance to track on the new area
+    perimeterUse = true;
+    ShowMessageln("Start to read the Perimeter wire");
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight; //+ (odometryTicksPerCm * 10);
+    stateEndOdometryLeft = odometryLeft;   //+ (odometryTicksPerCm * 10);
+    OdoRampCompute();
+
+    break;
+
+  case STATE_ROLL_TONEXTTAG: // when find a tag the mower roll to leave the wire and go again in peirfind with new heading
+    AngleRotate = newtagRotAngle1;
+    newtagRotAngle1Radian = newtagRotAngle1 * PI / 180.0;
+    ShowMessage("Actual Heading ");
+    ShowMessageln(imu.ypr.yaw * 180 / PI);
+    periFindDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
+    ShowMessage("New PeriFind Heading ");
+    ShowMessageln(periFindDriveHeading * 180 / PI);
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    //Always rotate RIGHT to leave the wire
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+
+    OdoRampCompute();
+    break;
+
+  case STATE_AUTO_CALIBRATE:
+    nextTimeAddYawMedian = millis() + 500;                                        //wait 500 ms to stabilize before record first yaw
+    nextTimeToDmpAutoCalibration = millis() + delayBetweenTwoDmpAutocalib * 1000; //set the next time for calib
+    //needDmpAutoCalibration = false;  //to avoid repetition
+    endTimeCalibration = millis() + maxDurationDmpAutocalib * 1000; //max duration calibration
+    compassYawMedian.clear();
+    accelGyroYawMedian.clear();
+
+    break;
+
+  case STATE_STOP_CALIBRATE:
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    if (actualRollDirToCalibrate != LEFT)
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm / 2);
+      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm / 2);
+    }
+    else
+    {
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm / 2);
+      stateEndOdometryLeft = odometryLeft - (int)(odometryTicksPerCm / 2);
+    }
+    //bber50
+    OdoRampCompute();
+    break;
+
+  case STATE_STOP_BEFORE_SPIRALE:
+    statusCurr = SPIRALE_MOWING;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 20); //brake in 20CM
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 20);   //brake in 20CM
+    OdoRampCompute();
+    break;
+
+  case STATE_ROTATE_RIGHT_360:
+    spiraleNbTurn = 0;
+    halfLaneNb = 0;
+    //highGrassDetect = false;
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight - (int)36000 * (odometryTicksPerCm * PI * odometryWheelBaseCm / 36000);
+    stateEndOdometryLeft = odometryLeft + (int)36000 * (odometryTicksPerCm * PI * odometryWheelBaseCm / 36000);
+    OdoRampCompute();
+    break;
+
+  case STATE_NEXT_SPIRE:
+    if (spiraleNbTurn == 0)
+    {
       UseAccelLeft = 1;
-      UseBrakeLeft = 1;
       UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = -motorSpeedMaxRpm  ;
-      motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      OdoRampCompute();
-      break;
-
-    case STATE_ROLL2_TO_NEWAREA:  // when find a tag the mower roll with new heading and drive in straight line
-      AngleRotate = newtagRotAngle2;
-      newtagRotAngle1Radian = newtagRotAngle2 * PI / 180.0;
-      ShowMessage("Actual Heading ");
-      ShowMessageln(imu.ypr.yaw * 180 / PI);
-      remoteDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
-      ShowMessage("New Remote Heading ");
-      ShowMessageln(remoteDriveHeading * 180 / PI);
-      if (AngleRotate >= 0) {
-        rollDir = RIGHT;
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-      }
-      else {
-        rollDir = LEFT;
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      }
-
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later  HERE IT CAN BE NEGATIVE WHEN ROLL LEFT
-      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-
-
-
-
-
-      OdoRampCompute();
-      break;
-
-    case STATE_DRIVE1_TO_NEWAREA:
-      UseAccelLeft = 1;
-      UseBrakeLeft = 0;
-      UseAccelRight = 1;
-      UseBrakeRight = 0;
-      currDistToDrive = 0; // when use the IMU the distance is not check on each wheel but on averrage
-      // newtagDistance1 is the distance to drive
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * newtagDistance1);
-      stateEndOdometryLeft = odometryLeft +  (int)(odometryTicksPerCm * newtagDistance1) ;
-      OdoRampCompute();
-
-      break;
-    case STATE_DRIVE2_TO_NEWAREA:
-      UseAccelLeft = 1;
-      UseBrakeLeft = 0;
-      UseAccelRight = 1;
-      UseBrakeRight = 0;
-      currDistToDrive = 0;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * newtagDistance2);
-      stateEndOdometryLeft = odometryLeft +  (int)(odometryTicksPerCm * newtagDistance2) ;
-      OdoRampCompute();
-      break;
-
-    case STATE_STOP_TO_NEWAREA:
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutStop);
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutStop);
-      OdoRampCompute();
-      break;
-
-    case STATE_WAIT_FOR_SIG2:
-      statusCurr = WAITSIG2;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      //when the raspberry receive this new status it start the sender with the correct area sigcode
-      totalDistDrive = 0; //reset the distance to track on the new area
-      perimeterUse = true;
-      ShowMessageln("Start to read the Perimeter wire");
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight;//+ (odometryTicksPerCm * 10);
-      stateEndOdometryLeft = odometryLeft;//+ (odometryTicksPerCm * 10);
-      OdoRampCompute();
-
-      break;
-
-    case STATE_ROLL_TONEXTTAG:  // when find a tag the mower roll to leave the wire and go again in peirfind with new heading
-      AngleRotate = newtagRotAngle1;
-      newtagRotAngle1Radian = newtagRotAngle1 * PI / 180.0;
-      ShowMessage("Actual Heading ");
-      ShowMessageln(imu.ypr.yaw * 180 / PI);
-      periFindDriveHeading = scalePI(imu.ypr.yaw + newtagRotAngle1Radian);
-      ShowMessage("New PeriFind Heading ");
-      ShowMessageln(periFindDriveHeading * 180 / PI);
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      //Always rotate RIGHT to leave the wire
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5 ;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-
-      OdoRampCompute();
-      break;
-
-    case STATE_AUTO_CALIBRATE:
-      nextTimeAddYawMedian = millis() + 500; //wait 500 ms to stabilize before record first yaw
-      nextTimeToDmpAutoCalibration = millis() + delayBetweenTwoDmpAutocalib * 1000; //set the next time for calib
-      //needDmpAutoCalibration = false;  //to avoid repetition
-      endTimeCalibration = millis() + maxDurationDmpAutocalib * 1000;  //max duration calibration
-      compassYawMedian.clear();
-      accelGyroYawMedian.clear();
-
-      break;
-
-
-    case STATE_STOP_CALIBRATE:
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      if (actualRollDirToCalibrate != LEFT) {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm / 2 );
-        stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm / 2 );
-
-      } else {
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm / 2 ) ;
-        stateEndOdometryLeft = odometryLeft - (int)(odometryTicksPerCm / 2 ) ;
-      }
-      //bber50
-      OdoRampCompute();
-      break;
-
-    case STATE_STOP_BEFORE_SPIRALE:
-      statusCurr = SPIRALE_MOWING;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 20 ); //brake in 20CM
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 20);  //brake in 20CM
-      OdoRampCompute();
-      break;
-
-
-    case STATE_ROTATE_RIGHT_360:
-      spiraleNbTurn = 0;
-      halfLaneNb = 0;
-      //highGrassDetect = false;
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm  ;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm  ;
-      stateEndOdometryRight = odometryRight - (int)36000 * (odometryTicksPerCm * PI * odometryWheelBaseCm / 36000);
-      stateEndOdometryLeft = odometryLeft + (int)36000 * (odometryTicksPerCm * PI * odometryWheelBaseCm / 36000);
-      OdoRampCompute();
-      break;
-
-    case STATE_NEXT_SPIRE:
-      if (spiraleNbTurn == 0) {
-        UseAccelLeft = 1;
-        UseAccelRight = 1;
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5 ; ///adjust to change the access to next arc
-        motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-      }
-      else {
-        UseAccelLeft = 0;
-        UseAccelRight = 0;
-      }
-      UseBrakeLeft = 0;
-      UseBrakeRight = 0;
-      stateEndOdometryRight = odometryRight +  (odometryTicksPerCm * odometryWheelBaseCm / 2);
-      stateEndOdometryLeft = odometryLeft +  (odometryTicksPerCm * odometryWheelBaseCm / 2);
-      OdoRampCompute();
-
-      break;
-
-    case STATE_MOW_SPIRALE:
-      float DistToDriveRight;
-      float DistToDriveLeft;
-      float Tmp;
-      float Tmp1;
-      setBeeper(0, 0, 0, 0, 0);
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5; ///adjust to change the access to next arc
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    }
+    else
+    {
       UseAccelLeft = 0;
       UseAccelRight = 0;
-      UseBrakeLeft = 0;
-      UseBrakeRight = 0;
+    }
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
+    stateEndOdometryRight = odometryRight + (odometryTicksPerCm * odometryWheelBaseCm / 2);
+    stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * odometryWheelBaseCm / 2);
+    OdoRampCompute();
 
-      if (spiraleNbTurn == 0) {
-        R = (float)(odometryWheelBaseCm * 1.2); //*1.2 to avoid that wheel is completly stop
-        DistToDriveRight = PI * (R / 2.00);
-        DistToDriveLeft = PI * (R * 1.50);
-      }
-      else {
-        //ShowMessageln(R);
-        R = R + (float)(odometryWheelBaseCm / 2);
-        //ShowMessageln(R);
-        DistToDriveRight = PI * (R - ((float)odometryWheelBaseCm / 2.00));
-        DistToDriveLeft = PI * (R + ((float)odometryWheelBaseCm / 2.00));
-      }
+    break;
 
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-      Tmp = 2 * (R - float(odometryWheelBaseCm));
-      Tmp1 = 2.00 * (R + float(odometryWheelBaseCm));
-      motorRightSpeedRpmSet = (int) (motorLeftSpeedRpmSet * Tmp / Tmp1) ;
+  case STATE_MOW_SPIRALE:
+    float DistToDriveRight;
+    float DistToDriveLeft;
+    float Tmp;
+    float Tmp1;
+    setBeeper(0, 0, 0, 0, 0);
+    UseAccelLeft = 0;
+    UseAccelRight = 0;
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
 
+    if (spiraleNbTurn == 0)
+    {
+      R = (float)(odometryWheelBaseCm * 1.2); //*1.2 to avoid that wheel is completly stop
+      DistToDriveRight = PI * (R / 2.00);
+      DistToDriveLeft = PI * (R * 1.50);
+    }
+    else
+    {
+      //ShowMessageln(R);
+      R = R + (float)(odometryWheelBaseCm / 2);
+      //ShowMessageln(R);
+      DistToDriveRight = PI * (R - ((float)odometryWheelBaseCm / 2.00));
+      DistToDriveLeft = PI * (R + ((float)odometryWheelBaseCm / 2.00));
+    }
 
-      stateEndOdometryRight = odometryRight +  (odometryTicksPerCm * DistToDriveRight);
-      stateEndOdometryLeft = odometryLeft +  (odometryTicksPerCm * DistToDriveLeft);
-      /*
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+    Tmp = 2 * (R - float(odometryWheelBaseCm));
+    Tmp1 = 2.00 * (R + float(odometryWheelBaseCm));
+    motorRightSpeedRpmSet = (int)(motorLeftSpeedRpmSet * Tmp / Tmp1);
+
+    stateEndOdometryRight = odometryRight + (odometryTicksPerCm * DistToDriveRight);
+    stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * DistToDriveLeft);
+    /*
             ShowMessage("MOW SPIRALE R ");
             ShowMessage(R);
             ShowMessage(" Tmp ");
@@ -3465,125 +3519,109 @@ void Robot::setNextState(byte stateNew, byte dir) {
 
       */
 
+    OdoRampCompute();
+    spiraleNbTurn = spiraleNbTurn + 1;
 
+    break;
 
-      OdoRampCompute();
-      spiraleNbTurn = spiraleNbTurn + 1;
-
-      break;
-
-    case STATE_PERI_OUT_REV: //in normal mowing reverse after the wire trigger
-      readDHT22(); // here the mower is stop so can spend 250ms  for reading
-      setBeeper(0, 0, 0, 0, 0);
-      perimeter.lastInsideTime[0] = millis(); //use to avoid perimetertimeout when mower outside perimeter
-      if (mowPatternCurr == MOW_LANES) {
-        PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
-        PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
-      }
-      else
-      {
-        PrevStateOdoDepassLeft = 0;
-        PrevStateOdoDepassRight = 0;
-      }
-      if (rollDir == RIGHT) {
-        UseAccelLeft = 1;
-        UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        if (mowPatternCurr == MOW_LANES)   UseBrakeRight = 1;
-        else UseBrakeRight = 0;
-      }
-      else
-      {
-        UseAccelLeft = 1;
-        if (mowPatternCurr == MOW_LANES)  UseBrakeLeft = 1;
-        else UseBrakeLeft = 0;
-        UseAccelRight = 1;
+  case STATE_PERI_OUT_REV: //in normal mowing reverse after the wire trigger
+    readDHT22();           // here the mower is stop so can spend 250ms  for reading
+    setBeeper(0, 0, 0, 0, 0);
+    perimeter.lastInsideTime[0] = millis(); //use to avoid perimetertimeout when mower outside perimeter
+    if (mowPatternCurr == MOW_LANES)
+    {
+      PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
+      PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
+    }
+    else
+    {
+      PrevStateOdoDepassLeft = 0;
+      PrevStateOdoDepassRight = 0;
+    }
+    if (rollDir == RIGHT)
+    {
+      UseAccelLeft = 1;
+      UseBrakeLeft = 1;
+      UseAccelRight = 1;
+      if (mowPatternCurr == MOW_LANES)
         UseBrakeRight = 1;
-      }
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriOutRev) - PrevStateOdoDepassRight;
-      stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriOutRev) - PrevStateOdoDepassLeft;
-      OdoRampCompute();
-      break;
-
-    case STATE_PERI_OUT_ROLL: //roll left or right in normal mode
-      if (mowPatternCurr == MOW_RANDOM) AngleRotate = random(motorRollDegMin, motorRollDegMax);
-
-      if (dir == RIGHT) {
-        if (mowPatternCurr == MOW_ZIGZAG) AngleRotate = imu.scale180(imuDriveHeading + 135); //need limit value to valib the rebon
-        UseAccelLeft = 1;
-        //bb6
-        //UseBrakeLeft = 1;
-        UseBrakeLeft = 0;
-        UseAccelRight = 0;
-        UseBrakeRight = 1;
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-        Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-        stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-        stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-
-      } else {
-        if (mowPatternCurr == MOW_ZIGZAG) AngleRotate = imu.scale180(imuDriveHeading - 135); //need limit value to valib the rebon
-        UseAccelLeft = 0;
-        UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        //bb6 =1
+      else
         UseBrakeRight = 0;
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm;
-        Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-        stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) ;
-        stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) ;
-      }
-      OdoRampCompute();
-      break;
-
-    case STATE_PERI_OUT_ROLL_TOINSIDE:  //roll left or right in normal mode
-      //bber2
-      perimeter.lastInsideTime[0] = millis(); //use to avoid perimetertimeout when mower outside perimeter
-      if (stateCurr == STATE_WAIT_AND_REPEAT) {
-        RollToInsideQty = RollToInsideQty + 1;
-        ShowMessage("Not Inside roll nb: ");
-        ShowMessageln(RollToInsideQty);
-      }
-      else {
-        RollToInsideQty = 0;
-        ShowMessage("Find Inside roll nb: ");
-        ShowMessageln(RollToInsideQty);
-      }
-
-      AngleRotate = 50;
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      if (dir == RIGHT) {
-        UseAccelLeft = 1;
+    }
+    else
+    {
+      UseAccelLeft = 1;
+      if (mowPatternCurr == MOW_LANES)
         UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        UseBrakeRight = 1;
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5 ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
-        stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-        stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      else
+        UseBrakeLeft = 0;
+      UseAccelRight = 1;
+      UseBrakeRight = 1;
+    }
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriOutRev) - PrevStateOdoDepassRight;
+    stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriOutRev) - PrevStateOdoDepassLeft;
+    OdoRampCompute();
+    break;
 
-      } else {
-        UseAccelLeft = 1;
-        UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        UseBrakeRight = 1;
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-        stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) ;
-        stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+  case STATE_PERI_OUT_ROLL: //roll left or right in normal mode
+    if (mowPatternCurr == MOW_RANDOM)
+      AngleRotate = random(motorRollDegMin, motorRollDegMax);
 
-
-      }
-      OdoRampCompute();
-      break;
-    case STATE_PERI_OUT_ROLL_TOTRACK:  //roll left or right in normal mode
-
-      AngleRotate = 180;
+    if (dir == RIGHT)
+    {
+      if (mowPatternCurr == MOW_ZIGZAG)
+        AngleRotate = imu.scale180(imuDriveHeading + 135); //need limit value to valib the rebon
+      UseAccelLeft = 1;
+      //bb6
+      //UseBrakeLeft = 1;
+      UseBrakeLeft = 0;
+      UseAccelRight = 0;
+      UseBrakeRight = 1;
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
       Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    }
+    else
+    {
+      if (mowPatternCurr == MOW_ZIGZAG)
+        AngleRotate = imu.scale180(imuDriveHeading - 135); //need limit value to valib the rebon
+      UseAccelLeft = 0;
+      UseBrakeLeft = 1;
+      UseAccelRight = 1;
+      //bb6 =1
+      UseBrakeRight = 0;
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    }
+    OdoRampCompute();
+    break;
 
+  case STATE_PERI_OUT_ROLL_TOINSIDE: //roll left or right in normal mode
+    //bber2
+    perimeter.lastInsideTime[0] = millis(); //use to avoid perimetertimeout when mower outside perimeter
+    if (stateCurr == STATE_WAIT_AND_REPEAT)
+    {
+      RollToInsideQty = RollToInsideQty + 1;
+      ShowMessage("Not Inside roll nb: ");
+      ShowMessageln(RollToInsideQty);
+    }
+    else
+    {
+      RollToInsideQty = 0;
+      ShowMessage("Find Inside roll nb: ");
+      ShowMessageln(RollToInsideQty);
+    }
+
+    AngleRotate = 50;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    if (dir == RIGHT)
+    {
       UseAccelLeft = 1;
       UseBrakeLeft = 1;
       UseAccelRight = 1;
@@ -3592,232 +3630,271 @@ void Robot::setNextState(byte stateNew, byte dir) {
       motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
       stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
       stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-
-
-      OdoRampCompute();
-      break;
-
-    case STATE_PERI_OUT_STOP_ROLL_TOTRACK:  //roll right in normal mode when find wire
-      UseAccelLeft = 0;
+    }
+    else
+    {
+      UseAccelLeft = 1;
       UseBrakeLeft = 1;
-      UseAccelRight = 0;
+      UseAccelRight = 1;
       UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
-      stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 5); //stop on 5 cm
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 5);
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    }
+    OdoRampCompute();
+    break;
+  case STATE_PERI_OUT_ROLL_TOTRACK: //roll left or right in normal mode
 
+    AngleRotate = 180;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
 
-      OdoRampCompute();
-      break;
-    case STATE_PERI_OUT_FORW:  //Accel after roll so the 2 wheel have the same speed when reach the forward state
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
 
-      if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG)) {
-        PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
-        PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
-      }
+    OdoRampCompute();
+    break;
+
+  case STATE_PERI_OUT_STOP_ROLL_TOTRACK: //roll right in normal mode when find wire
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.5;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.5;
+    stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 5); //stop on 5 cm
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 5);
+
+    OdoRampCompute();
+    break;
+  case STATE_PERI_OUT_FORW: //Accel after roll so the 2 wheel have the same speed when reach the forward state
+
+    if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG))
+    {
+      PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
+      PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
+    }
+    else
+    {
+      PrevStateOdoDepassLeft = 0;
+      PrevStateOdoDepassRight = 0;
+    }
+    if (dir == RIGHT)
+    {
+      if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG))
+        UseAccelLeft = 1;
       else
-      {
-        PrevStateOdoDepassLeft = 0;
-        PrevStateOdoDepassRight = 0;
-      }
-      if (dir == RIGHT) {
-        if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG))   UseAccelLeft = 1;
-        else  UseAccelLeft = 0;
+        UseAccelLeft = 0;
+      UseAccelRight = 1;
+    }
+    else
+    {
+
+      if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG))
         UseAccelRight = 1;
-      } else {
+      else
+        UseAccelRight = 0;
+      UseAccelLeft = 1;
+    }
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutForw) - PrevStateOdoDepassRight;
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutForw) - PrevStateOdoDepassLeft;
+    OdoRampCompute();
 
-        if ((mowPatternCurr == MOW_LANES) || (mowPatternCurr == MOW_ZIGZAG))   UseAccelRight = 1;
-        else  UseAccelRight = 0;
-        UseAccelLeft = 1;
+    break;
 
-      }
-      UseBrakeLeft = 0;
+  case STATE_PERI_OUT_LANE_ROLL1: //roll left or right in normal mode for 135 deg
+
+    PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
+    PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
+    AngleRotate = 135;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    if (dir == RIGHT)
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
+      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
+    }
+    else
+    {
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
+      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
+    }
+    OdoRampCompute();
+    break;
+
+  case STATE_NEXT_LANE_FORW: //small move to reach the next  parallel lane
+    PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
+    PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
+    UseAccelLeft = 1;
+    UseAccelRight = 1;
+    UseAccelLeft = 1;
+    UseAccelRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
+
+    //************************************same as spirale in by lane mowing*******************************
+    if (highGrassDetect)
+    {
+      Tempovar = DistBetweenLane / 2;
+      halfLaneNb++; //count the nb of mowing lane in half lenght same as spirale into lane mowing
+      ShowMessage("Hight grass detected actual halfLaneNb ");
+      ShowMessageln(halfLaneNb);
+    }
+    else
+      Tempovar = DistBetweenLane;
+    //****************************************************************************************************
+
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * Tempovar) - PrevStateOdoDepassRight; //forward for  distance between lane
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * Tempovar) - PrevStateOdoDepassLeft;
+
+    OdoRampCompute();
+    break;
+
+  case STATE_PERI_OUT_LANE_ROLL2: //roll left or right in normal mode
+
+    PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
+    PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
+    AngleRotate = 45;
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+
+    if (dir == RIGHT)
+    {
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
+      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
+    }
+    else
+    {
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
+      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
+    }
+    OdoRampCompute();
+    break;
+
+  case STATE_REVERSE: //hit obstacle in forward state
+    if (dir == RIGHT)
+    {
+      UseAccelLeft = 1;
+      UseBrakeLeft = 1;
+      UseAccelRight = 1;
       UseBrakeRight = 0;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * DistPeriOutForw) - PrevStateOdoDepassRight;
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * DistPeriOutForw) - PrevStateOdoDepassLeft;
-      OdoRampCompute();
-
-      break;
-
-
-    case STATE_PERI_OUT_LANE_ROLL1: //roll left or right in normal mode for 135 deg
-
-      PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
-      PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
-      AngleRotate = 135;
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    }
+    if (dir == LEFT)
+    {
       UseAccelLeft = 1;
-      UseBrakeLeft = 1;
+      UseBrakeLeft = 0;
       UseAccelRight = 1;
       UseBrakeRight = 1;
-      if (dir == RIGHT) {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-        stateEndOdometryRight =  odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight ;
-        stateEndOdometryLeft =  odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft ;
-      } else {
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
-        stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
-      }
-      OdoRampCompute();
-      break;
+    }
 
-    case STATE_NEXT_LANE_FORW:  //small move to reach the next  parallel lane
-      PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
-      PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
-      UseAccelLeft = 1;
-      UseAccelRight = 1;
-      UseAccelLeft = 1;
-      UseAccelRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = motorSpeedMaxRpm;
-
-      //************************************same as spirale in by lane mowing*******************************
-      if (highGrassDetect) {
-        Tempovar = DistBetweenLane / 2;
-        halfLaneNb++; //count the nb of mowing lane in half lenght same as spirale into lane mowing
-        ShowMessage("Hight grass detected actual halfLaneNb ");
-        ShowMessageln(halfLaneNb);
-      }
-      else Tempovar = DistBetweenLane;
-      //****************************************************************************************************
-
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * Tempovar) - PrevStateOdoDepassRight; //forward for  distance between lane
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * Tempovar) - PrevStateOdoDepassLeft;
-
-      OdoRampCompute();
-      break;
-
-    case STATE_PERI_OUT_LANE_ROLL2: //roll left or right in normal mode
-
-      PrevStateOdoDepassLeft = odometryLeft - stateEndOdometryLeft;
-      PrevStateOdoDepassRight = odometryRight - stateEndOdometryRight;
-      AngleRotate = 45;
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-
-      if (dir == RIGHT) {
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-        stateEndOdometryRight =  odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight ;
-        stateEndOdometryLeft =  odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft ;
-      } else {
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassRight;
-        stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar) - PrevStateOdoDepassLeft;
-      }
-      OdoRampCompute();
-      break;
-
-    case STATE_REVERSE:  //hit obstacle in forward state
-      if (dir == RIGHT) {
-        UseAccelLeft = 1;
-        UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        UseBrakeRight = 0;
-      }
-      if (dir == LEFT) {
-        UseAccelLeft = 1;
-        UseBrakeLeft = 0;
-        UseAccelRight = 1;
-        UseBrakeRight = 1;
-      }
-
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm ;
-      stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriObstacleRev);
-      stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriObstacleRev);
-      OdoRampCompute();
-      /*
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+    stateEndOdometryRight = odometryRight - (odometryTicksPerCm * DistPeriObstacleRev);
+    stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * DistPeriObstacleRev);
+    OdoRampCompute();
+    /*
         motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 1.25;
         stateEndTime = millis() + motorReverseTime + motorZeroSettleTime;
       */
-      break;
-    case STATE_ROLL:  // when hit obstacle in forward mode
-      AngleRotate = random(50, 180);
-      Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
-      if (dir == RIGHT) {
-        UseAccelLeft = 1;
-        UseBrakeLeft = 0;
-        UseAccelRight = 0;
-        UseBrakeRight = 1;
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-        stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-
-      } else {
-        UseAccelLeft = 0;
-        UseBrakeLeft = 1;
-        UseAccelRight = 1;
-        UseBrakeRight = 0;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm ;
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
-        stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-        stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-      }
-      OdoRampCompute();
-      break;
-
-
-
-
-    case STATE_TEST_COMPASS:  // to test the imu
-      statusCurr = TESTING;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
+    break;
+  case STATE_ROLL: // when hit obstacle in forward mode
+    AngleRotate = random(50, 180);
+    Tempovar = 36000 / AngleRotate; //need a value*100 for integer division later
+    if (dir == RIGHT)
+    {
       UseAccelLeft = 1;
+      UseBrakeLeft = 0;
+      UseAccelRight = 0;
+      UseBrakeRight = 1;
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    }
+    else
+    {
+      UseAccelLeft = 0;
       UseBrakeLeft = 1;
       UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
-      stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 2 * PI * odometryWheelBaseCm );
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 2 *  PI * odometryWheelBaseCm );
+      UseBrakeRight = 0;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm;
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm;
+      stateEndOdometryRight = odometryRight + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+      stateEndOdometryLeft = odometryLeft - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
+    }
+    OdoRampCompute();
+    break;
 
+  case STATE_TEST_COMPASS: // to test the imu
+    statusCurr = TESTING;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+    stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 2 * PI * odometryWheelBaseCm);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 2 * PI * odometryWheelBaseCm);
 
+    OdoRampCompute();
 
-      OdoRampCompute();
+    break;
 
+  case STATE_CALIB_MOTOR_SPEED:
+    statusCurr = TESTING;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    OdoRampCompute();
 
-      break;
+    break;
 
+  case STATE_TEST_MOTOR:
+    statusCurr = TESTING;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    OdoRampCompute();
 
-    case STATE_CALIB_MOTOR_SPEED:
-      statusCurr = TESTING;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      OdoRampCompute();
+    break;
 
-      break;
-
-    case STATE_TEST_MOTOR:
-      statusCurr = TESTING;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      OdoRampCompute();
-
-      break;
-
-
-    case STATE_ROLL_TO_FIND_YAW:  // roll slowly 720 deg until find the positive yaw, state will be changed by the IMU
-      if (stopMotorDuringCalib) motorMowEnable = false;//stop the mow motor
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      /*
+  case STATE_ROLL_TO_FIND_YAW: // roll slowly 720 deg until find the positive yaw, state will be changed by the IMU
+    if (stopMotorDuringCalib)
+      motorMowEnable = false; //stop the mow motor
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    /*
         ShowMessage(" imu.comYaw ");
         ShowMessage(abs(100 * imu.comYaw));
         ShowMessage(" imu.ypr.yaw ");
@@ -3826,187 +3903,188 @@ void Robot::setNextState(byte stateNew, byte dir) {
         ShowMessageln(distancePI(imu.comYaw, imu.ypr.yaw));
       */
 
+    if (distancePI(imu.comYaw, yawCiblePos * PI / 180) > 0)
+    { //rotate in the nearest direction
+      actualRollDirToCalibrate = RIGHT;
+      //ShowMessageln(" >>> >>> >>> >>> >>> >>> 0");
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+      motorRightSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+      stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 4 * PI * odometryWheelBaseCm);
+      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 4 * PI * odometryWheelBaseCm);
+    }
+    else
+    {
+      actualRollDirToCalibrate = LEFT;
+      //ShowMessageln(" <<< <<< <<< <<< <<< << 0");
+      motorLeftSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+      motorRightSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
+      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 4 * PI * odometryWheelBaseCm);
+      stateEndOdometryLeft = odometryLeft - (int)(odometryTicksPerCm * 4 * PI * odometryWheelBaseCm);
+    }
 
-      if (distancePI(imu.comYaw, yawCiblePos * PI / 180) > 0) { //rotate in the nearest direction
-        actualRollDirToCalibrate = RIGHT;
-        //ShowMessageln(" >>> >>> >>> >>> >>> >>> 0");
-        motorLeftSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100 ;
-        motorRightSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
-        stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm *  4 * PI * odometryWheelBaseCm );
-        stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm *  4 * PI * odometryWheelBaseCm );
-      }
-      else
-      {
-        actualRollDirToCalibrate = LEFT;
-        //ShowMessageln(" <<< <<< <<< <<< <<< << 0");
-        motorLeftSpeedRpmSet = -motorSpeedMaxRpm * compassRollSpeedCoeff / 100 ;
-        motorRightSpeedRpmSet = motorSpeedMaxRpm * compassRollSpeedCoeff / 100;
-        stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm *  4 * PI * odometryWheelBaseCm );
-        stateEndOdometryLeft = odometryLeft - (int)(odometryTicksPerCm *  4 * PI * odometryWheelBaseCm );
-      }
+    OdoRampCompute();
+    break;
 
+  case STATE_ROLL_WAIT:
+    ///use to make test with o in console but never call in normal mode
 
-      OdoRampCompute();
-      break;
+    //roll slowly 360 deg to find the yaw state is stopped by the IMU
+    UseAccelLeft = 1;
+    UseBrakeLeft = 1;
+    UseAccelRight = 1;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
+    motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2;
+    stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm * 2 * PI * odometryWheelBaseCm);
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 2 * PI * odometryWheelBaseCm);
 
+    OdoRampCompute();
+    break;
+  case STATE_MANUAL:
+    statusCurr = MANUAL;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    break;
+  case STATE_REMOTE:
+    statusCurr = REMOTE;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    motorMowEnable = false;
+    break;
+  case STATE_STATION: //stop immediatly
+    areaInMowing = 1;
+    //ignoreRfidTag = false;
+    motorMowEnable = false;
+    startByTimer = false;
+    totalDistDrive = 0;                   //reset the tracking distance travel
+    whereToResetSpeed = 50000;            // initial value to 500 meters
+    ActualSpeedPeriPWM = MaxSpeedperiPwm; //reset the tracking speed
+    statusCurr = IN_STATION;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    //time to reset the speed because the Peri find can use very high speed
+    motorSpeedMaxPwm = motorInitialSpeedMaxPwm;
+    stateEndOdometryRight = odometryRight;
+    stateEndOdometryLeft = odometryLeft;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
+    setMotorPWM(0, 0, false);
+    setActuator(ACT_CHGRELAY, 0);
+    setDefaults();
+    statsMowTimeTotalStart = false; // stop stats mowTime counter
+    //bber30
+    loadSaveRobotStats(false); //save robot stats
 
+    break;
 
+  case STATE_STATION_CHARGING:
+    setActuator(ACT_CHGRELAY, 1);
+    setDefaults();
+    break;
 
-    case STATE_ROLL_WAIT:
-      ///use to make test with o in console but never call in normal mode
+  case STATE_OFF:
+    statusCurr = WAIT;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
 
-      //roll slowly 360 deg to find the yaw state is stopped by the IMU
-      UseAccelLeft = 1;
-      UseBrakeLeft = 1;
-      UseAccelRight = 1;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2 ;
-      motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2;
-      stateEndOdometryRight = odometryRight - (int)(odometryTicksPerCm *  2 * PI * odometryWheelBaseCm );
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm *  2 * PI * odometryWheelBaseCm );
+    startByTimer = false; // reset the start timer
+    setActuator(ACT_CHGRELAY, 0);
+    setDefaults();
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
+    stateEndOdometryRight = odometryRight + (odometryTicksPerCm * 20);
+    stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * 20);
+    // stateMaxiTime = millis() + 5000;
+    OdoRampCompute();
+    statsMowTimeTotalStart = false; // stop stats mowTime counter
+    loadSaveRobotStats(false);      //save robot stats
+    break;
 
-      OdoRampCompute();
-      break;
-    case STATE_MANUAL:
-      statusCurr = MANUAL;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      break;
-    case STATE_REMOTE:
-      statusCurr = REMOTE;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      motorMowEnable = false;
-      break;
-    case STATE_STATION: //stop immediatly
-      areaInMowing = 1;
-      //ignoreRfidTag = false;
-      motorMowEnable = false;
-      startByTimer = false;
-      totalDistDrive = 0; //reset the tracking distance travel
-      whereToResetSpeed = 50000; // initial value to 500 meters
-      ActualSpeedPeriPWM = MaxSpeedperiPwm; //reset the tracking speed
-      statusCurr = IN_STATION;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      //time to reset the speed because the Peri find can use very high speed
-      motorSpeedMaxPwm = motorInitialSpeedMaxPwm;
-      stateEndOdometryRight = odometryRight;
-      stateEndOdometryLeft = odometryLeft ;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
-      setMotorPWM(0, 0, false);
-      setActuator(ACT_CHGRELAY, 0);
-      setDefaults();
-      statsMowTimeTotalStart = false;  // stop stats mowTime counter
-      //bber30
-      loadSaveRobotStats(false);        //save robot stats
+  case STATE_ERROR:
+    statusCurr = IN_ERROR;
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    setActuator(ACT_CHGRELAY, 0);
+    motorMowEnable = false;
+    UseAccelLeft = 0;
+    UseBrakeLeft = 1;
+    UseAccelRight = 0;
+    UseBrakeRight = 1;
+    motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
+    stateEndOdometryRight = odometryRight + (odometryTicksPerCm * 20);
+    stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * 20);
+    // stateMaxiTime = millis() + 5000;
+    OdoRampCompute();
+    statsMowTimeTotalStart = false; // stop stats mowTime counter
+    loadSaveRobotStats(false);      //save robot stats
+    break;
 
-      break;
+  case STATE_PERI_FIND:
+    //Don't Use accel when start from forward_odo because the 2 wheels are already running
+    //if status is change in pfod need to refresh it in PI
+    if (RaspberryPIUse)
+      MyRpi.SendStatusToPi();
+    ShowMessage("Area In Mowing ");
+    ShowMessage(areaInMowing);
+    ShowMessage(" Area To Go ");
+    ShowMessageln(areaToGo);
 
-    case STATE_STATION_CHARGING:
-      setActuator(ACT_CHGRELAY, 1);
-      setDefaults();
-      break;
-
-    case STATE_OFF:
-      statusCurr = WAIT;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-
-      startByTimer = false;// reset the start timer
-      setActuator(ACT_CHGRELAY, 0);
-      setDefaults();
-      UseAccelLeft = 0;
-      UseBrakeLeft = 1;
+    if ((stateCurr == STATE_FORWARD_ODO) || (stateCurr == STATE_PERI_OBSTACLE_AVOID))
+    {
       UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
-      stateEndOdometryRight = odometryRight + (odometryTicksPerCm * 20);
-      stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * 20);
-      // stateMaxiTime = millis() + 5000;
-      OdoRampCompute();
-      statsMowTimeTotalStart = false; // stop stats mowTime counter
-      loadSaveRobotStats(false);      //save robot stats
-      break;
-
-    case STATE_ERROR:
-      statusCurr = IN_ERROR;
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      setActuator(ACT_CHGRELAY, 0);
-      motorMowEnable = false;
       UseAccelLeft = 0;
-      UseBrakeLeft = 1;
-      UseAccelRight = 0;
-      UseBrakeRight = 1;
-      motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
-      stateEndOdometryRight = odometryRight + (odometryTicksPerCm * 20);
-      stateEndOdometryLeft = odometryLeft + (odometryTicksPerCm * 20);
-      // stateMaxiTime = millis() + 5000;
-      OdoRampCompute();
-      statsMowTimeTotalStart = false; // stop stats mowTime counter
-      loadSaveRobotStats(false);      //save robot stats
-      break;
-
-
-    case STATE_PERI_FIND:
-      //Don't Use accel when start from forward_odo because the 2 wheels are already running
-      //if status is change in pfod need to refresh it in PI
-      if (RaspberryPIUse) MyRpi.SendStatusToPi();
-      ShowMessage("Area In Mowing ");
-      ShowMessage(areaInMowing);
-      ShowMessage(" Area To Go ");
-      ShowMessageln(areaToGo);
-
-      if ((stateCurr == STATE_FORWARD_ODO) || (stateCurr == STATE_PERI_OBSTACLE_AVOID)) {
-        UseAccelRight = 0;
-        UseAccelLeft = 0;
-      }
-      else {
-        UseAccelRight = 1;
-        UseAccelLeft = 1;
-      }
-
-      UseBrakeLeft = 0;
-      UseBrakeRight = 0;
-
-      motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.2;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.2;
-      stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 30000);//300 ml
-      stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 30000);
-      OdoRampCompute();
-
-
-      motorMowEnable = false;
-      break;
-
-
-    case STATE_PERI_TRACK:
-      //motorMowEnable = false;     // FIXME: should be an option?
-      perimeterPID.reset();
-      PeriOdoIslandDiff =  odometryRight - odometryLeft;
-      break;
-
-    case STATE_WAIT_AND_REPEAT:
-      //ShowMessageln("WAIT AND REPEAT  ");
-
-      break;
-
-    //bber202
-    case STATE_ACCEL_FRWRD:
-      //use to start mow motor at low speed and limit noise on perimeter reading on startup
-      motorMowSpeedPWMSet = motorMowSpeedMinPwm;
-      motorMowPowerMedian.clear();
-
-      // after this state the mower use pid imu to drive straight so accelerate only at half the max speed
-      UseAccelLeft = 1;
-      UseBrakeLeft = 0;
+    }
+    else
+    {
       UseAccelRight = 1;
-      UseBrakeRight = 0;
-      motorRightSpeedRpmSet = motorSpeedMaxRpm / 2 ;
-      motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2 ;
-      stateEndOdometryRight = odometryRight + int(odometryTicksPerRevolution / 4) ;
-      stateEndOdometryLeft = odometryLeft + int(odometryTicksPerRevolution / 4) ;
-      OdoRampCompute();
+      UseAccelLeft = 1;
+    }
 
-      break;
+    UseBrakeLeft = 0;
+    UseBrakeRight = 0;
 
-  }  // end switch
+    motorRightSpeedRpmSet = motorSpeedMaxRpm / 1.2;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 1.2;
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * 30000); //300 ml
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * 30000);
+    OdoRampCompute();
+
+    motorMowEnable = false;
+    break;
+
+  case STATE_PERI_TRACK:
+    //motorMowEnable = false;     // FIXME: should be an option?
+    perimeterPID.reset();
+    PeriOdoIslandDiff = odometryRight - odometryLeft;
+    break;
+
+  case STATE_WAIT_AND_REPEAT:
+    //ShowMessageln("WAIT AND REPEAT  ");
+
+    break;
+
+  //bber202
+  case STATE_ACCEL_FRWRD:
+    //use to start mow motor at low speed and limit noise on perimeter reading on startup
+    motorMowSpeedPWMSet = motorMowSpeedMinPwm;
+    motorMowPowerMedian.clear();
+
+    // after this state the mower use pid imu to drive straight so accelerate only at half the max speed
+    UseAccelLeft = 1;
+    UseBrakeLeft = 0;
+    UseAccelRight = 1;
+    UseBrakeRight = 0;
+    motorRightSpeedRpmSet = motorSpeedMaxRpm / 2;
+    motorLeftSpeedRpmSet = motorSpeedMaxRpm / 2;
+    stateEndOdometryRight = odometryRight + int(odometryTicksPerRevolution / 4);
+    stateEndOdometryLeft = odometryLeft + int(odometryTicksPerRevolution / 4);
+    OdoRampCompute();
+
+    break;
+
+  } // end switch
 
   sonarObstacleTimeout = 0;
   // state has changed
@@ -4036,7 +4114,6 @@ void Robot::setNextState(byte stateNew, byte dir) {
   //ShowMessage (stateStartTime);
   //ShowMessage (" From state ");
   //ShowMessageln (F(stateNames[stateLast]));
-
 }
 
 void Robot::ShowMessage(String message) {

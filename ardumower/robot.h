@@ -201,13 +201,69 @@ enum { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL
 enum { LEFT, RIGHT };
 
 // mow patterns
-enum { MOW_RANDOM, MOW_LANES,MOW_WIRE, MOW_ZIGZAG };
+enum
+{
+  MOW_RANDOM,
+  MOW_LANES,
+  MOW_WIRE,
+  MOW_ZIGZAG,
+  MOW_SPIRAL,
+  MOW_SQUARE
+};
 
 //bb
 // console mode
 enum { CONSOLE_SENSOR_COUNTERS, CONSOLE_SENSOR_VALUES, CONSOLE_PERIMETER, CONSOLE_OFF , CONSOLE_TRACKING };
 
+// tasks.
+// These have a set of states, the result in to the desired output
+enum
+{
+  DRIVE, // Drive forward and keep heading
+  TURN,  //change lane, or direction
+  AVOID_OBSTACLE,
+  // LEAVE_STATION, //leave station is part of GOTO_START
+  GOTO_START,
+  GOTO_STATION,
+  GOTO_NEW_AREA,
+  // CHANGE_LANE, //change lane is part of turn
+  CHARGE,
+  WAITING
+};
 
+//Define the object 
+struct taskaction_t
+{
+  byte state;
+  int DistanceRobot;      //Distance in cm
+  int DistanceWheelLeft;  //Calculated Distance in cm
+  int DistanceWheelRight; //Calculated Distance in cm
+  int SpeedWheelLeft;     //Target wheel speed in rpm
+  int SpeedWheelRight;    //Target wheel speed in rpm
+  int Heading;            //heading to roll to
+  int Angle;              //Angle to turn
+  enum Result
+  {
+    NotStarted,
+    Success,
+    Failure
+  };
+  enum ResultTrigger
+  {
+    None,
+    Perimeter,
+    Sonar,
+    Bumper,
+    motorCurrent,
+    mowerCurrent,
+    Tilt,
+    GPS,
+    highGrass
+  };
+  int ActualDistanceWheelLeft;
+  int ActualDistanceWheelRight;
+};
+typedef struct taskaction_t taskaction_t;
 
 #define MAX_TIMERS 5
 
@@ -227,11 +283,15 @@ class Robot
     byte statusCurr;
     //byte statusLast;
     //byte statusNext;
-    
+
+    byte taskCurr;
+    byte taskPrevious;
+
     unsigned long stateTime;
     char* stateName();
     char* statusName();
-    
+    char *taskName();
+
     unsigned long stateStartTime;
     unsigned long stateEndTime;
     int idleTimeSec;
@@ -547,6 +607,11 @@ class Robot
     int maxDurationDmpAutocalib;
     float maxDriftPerSecond;
 
+    //RonPeeters
+    boolean taskRollBack;
+    int turnAngle;   // the angle to which to turn to
+    float ArcRadius; //radius of an arc to drive
+
     // ------- perimeter state --------------------------
 
     //bb
@@ -770,8 +835,11 @@ class Robot
     // call this from hall sensor interrupt
     virtual void setMotorMowRPMState(boolean motorMowRpmState);
 
-    // state machine
-    virtual void setNextState(byte stateNew, byte dir);
+    //Task Logic
+    virtual void setNewTask(byte newTask, byte rollBack);
+
+        // state machine
+        virtual void setNextState(byte stateNew, byte dir);
 
     // motor
     virtual void setMotorPWM(int pwmLeft, int pwmRight, boolean useAccel);

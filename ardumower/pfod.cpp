@@ -220,7 +220,7 @@ void RemoteControl::sendMainMenu(boolean update) {
     serialPort->print(robot->name);
     serialPort->print(")");
   }
-  serialPort->print(F("|r~Commands|n~Manual|s~Settings|in~Info|c~Test IMU|yt~Test ODO|m1~Console|yp~Plot"));
+  serialPort->print(F("|r~Commands|n~Manual|s~Settings|in~Info|te~Testing|c~Test IMU|yt~Test ODO|m1~Console|yp~Plot"));
   //bb1
   serialPort->println(F("|y4~Error counters}"));
 
@@ -270,6 +270,88 @@ void RemoteControl::processSettingsMenu(String pfodCmd) {
     sendSettingsMenu(true);
   }
   else sendSettingsMenu(true);
+}
+
+void RemoteControl::sendTestingMenu(boolean update)
+{
+  if (update)
+    serialPort->print("{:");
+  else
+    serialPort->print(F("{.Testing"));
+  // if ((robot->stateCurr == STATE_OFF) || (robot->stateCurr == STATE_STATION)) //deactivate the save setting if the mower is not OFF to avoid zombie
+  // {
+  //   serialPort->print(F("|sz~Save settings|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
+  //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
+  // }
+  // else
+  // {
+  //   serialPort->print(F("|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
+  //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
+  // }
+  serialPort->println(F("|te01~Test IMU|te02~Test ODO|te03~Test Tasks|te04~Test States}"));
+}
+
+void RemoteControl::processTestingMenu(String pfodCmd)
+{
+  if (pfodCmd == "te01")
+    sendTestOdoMenu(false);
+  else if (pfodCmd == "te02")
+    sendCompassMenu(false);
+  else
+    sendTestingMenu(true);
+}
+
+void RemoteControl::sendTestTasksMenu(boolean update)
+{
+  if (update)
+    serialPort->print("{:");
+  else
+    serialPort->print(F("{.Test Tasks"));
+  // if ((robot->stateCurr == STATE_OFF) || (robot->stateCurr == STATE_STATION)) //deactivate the save setting if the mower is not OFF to avoid zombie
+  // {
+  //   serialPort->print(F("|sz~Save settings|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
+  //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
+  // }
+  // else
+  // {
+  //   serialPort->print(F("|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
+  //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
+  // }
+  serialPort->println(F("|te0301~DRIVE|te0302~Avoid Obstacle"));
+  sendSlider("te0303", F("Avoidance radius"), robot->imuDriveHeading, "meter", 0.1, 5, 0);
+  serialPort->println(F("|te0304~Turn}"));
+  sendSlider("te0305", F("Turn angle"), robot->imuDriveHeading, "Deg", 1, 360, -360);
+  serialPort->println(F("|te0306~Go to Start}"));
+}
+
+void RemoteControl::processTestTasksMenu(String pfodCmd)
+{
+  if (pfodCmd == "te0301")
+  {
+    //set task to Drive
+    robot->statusCurr = TESTING;
+    robot->setNewTask(DRIVE, false);
+  }
+  else if (pfodCmd == "te0302")
+  {
+    robot->statusCurr = TESTING;
+    robot->setNewTask(AVOID_OBSTACLE, false);
+  }
+  else if (pfodCmd.startsWith("te0303"))
+    processSlider(pfodCmd, robot->ArcRadius, 0.1);
+  else if (pfodCmd == "te0304")
+  {
+    robot->statusCurr = TESTING;
+    robot->setNewTask(TURN, false);
+  }
+  else if (pfodCmd.startsWith("te0305"))
+    processSlider(pfodCmd, robot->turnAngle, 1);
+  else if (pfodCmd == "te0306")
+  {
+    robot->setNextState(STATE_STATION_REV, 0);
+  }
+  else
+    sendTestTasksMenu(true);
 }
 
 void RemoteControl::sendErrorMenu(boolean update) {
@@ -1844,7 +1926,8 @@ boolean RemoteControl::readSerial() {
       else if (pfodCmd == "t") sendDateTimeMenu(false);
       else if (pfodCmd == "i") sendTimerMenu(false);
       else if (pfodCmd == "in") sendInfoMenu(false);
-
+      else if (pfodCmd == "te")
+        sendTestingMenu(false);
 
       else if (pfodCmd.startsWith("a")) processMotorMenu(pfodCmd);
       else if (pfodCmd.startsWith("b")) processBumperMenu(pfodCmd);
