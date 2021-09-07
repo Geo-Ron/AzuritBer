@@ -2860,6 +2860,8 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
   }
   // if (newTask == taskCurr) return;
   // taskPrevious = taskCurr;
+  if (newTask == RETURN_TO_DEFAULT && taskCurr == RETURN_TO_DEFAULT )
+  return;
   if(newTask == RETURN_TO_DEFAULT)
   {
     // task has completed all actions, returning to default behaviour
@@ -2867,8 +2869,10 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
     {
     case TESTING:
       newTask = WAITING;
+    //case WAITING:
+
     default:
-      newTask = WAITING;
+     newTask = WAITING;
     }
   }
 
@@ -2929,6 +2933,7 @@ if (statusCurr == TESTING) {
     ShowMessageln("New task:");
     ShowMessageln(taskName());
   }
+  
   requestNextState();
 
 } // end setNewTask
@@ -2938,10 +2943,17 @@ void Robot::requestNextState()
 {
   if (developerActive)
   {
-    ShowMessageln("Entered requestNextState()");
+    ShowMessage("Entered requestNextState() in actionindex ");
+    ShowMessageln(TaskActionIndex);
+    ShowMessage("Result current action: ");
+    ShowMessageln(taskActions[TaskActionIndex].Result);
+    ShowMessage("retrycounter: ");
+    ShowMessageln(taskRetryCounter);
+    ShowMessage("rollback: ");
+    ShowMessageln(taskRollBack);
   }
 
-  if (taskActions[TaskActionIndex].Result = Success)
+  if (taskActions[TaskActionIndex].Result == ActionSuccess)
   {
     if (developerActive)
     {
@@ -2953,7 +2965,15 @@ void Robot::requestNextState()
       {
         ShowMessageln("Last action completed was FinalAction");
       }
-      setNewTask(RETURN_TO_DEFAULT, false); // klopt niet
+      if (taskCurr == taskPrevious) { //hier zit nog een issue
+        if (developerActive)
+        {
+          ShowMessageln("Previous task was equal to current task?");
+        }
+        return;
+      } else {
+      setNewTask(RETURN_TO_DEFAULT, false); 
+      }// klopt niet
       // } else {
         // taskRetryCounter++;
         // setNextState(taskActions[TaskActionIndex].state, false, true);
@@ -2963,17 +2983,17 @@ void Robot::requestNextState()
     {
       
       taskRollBack = false;
-      taskRetryCounter = 0;
+      taskRetryCounter = -1;
       TaskActionIndex++;
       if (developerActive)
       {
-        ShowMessageln("Starting next action:");
-        ShowMessageln("Starting next action:");
+        ShowMessage("Proceeding to next action: ");
+        ShowMessageln(stateNames[taskActions[TaskActionIndex].state]);
       }
       setNextState(taskActions[TaskActionIndex].state, false, false);
     }
   }
-  else if (taskActions[TaskActionIndex].Result = Failure)
+  else if (taskActions[TaskActionIndex].Result == ActionFailure)
   {
     if (developerActive)
     {
@@ -2986,6 +3006,8 @@ void Robot::requestNextState()
     if (developerActive)
     {
       ShowMessageln("Lastresult was unknown");
+      ShowMessage("Proceeding to next action: ");
+      ShowMessageln(stateNames[taskActions[TaskActionIndex].state]);
     }
     // Result has to be NotStarted
     taskRollBack = false;
@@ -3000,7 +3022,7 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 {
   if (developerActive)
   {
-    ShowMessageln("Entered setNextState. Previous state was:");
+    ShowMessageln("Entered setNextState(). Previous state was:");
     ShowMessageln(stateNames[stateCurr]);
     ShowMessageln("Next state would be");
     ShowMessageln(stateNames[stateNew]);
@@ -5502,7 +5524,7 @@ case STATE_DRIVING:
   if (leftOdoCompleted || rightOdoCompleted)
   {
     if (standingStill){
-    taskActions[TaskActionIndex].Result = Success;
+    taskActions[TaskActionIndex].Result = ActionSuccess;
     requestNextState();
     }
   }
@@ -5560,7 +5582,7 @@ case STATE_ARC:
   {
     if (standingStill)
     {
-      taskActions[TaskActionIndex].Result = Success;
+      taskActions[TaskActionIndex].Result = ActionSuccess;
       requestNextState();
     }
   }
@@ -5704,7 +5726,7 @@ case STATE_ROLL:
   {
     if (standingStill)
     {
-      taskActions[TaskActionIndex].Result = Success;
+      taskActions[TaskActionIndex].Result = ActionSuccess;
       requestNextState();
     }
   }

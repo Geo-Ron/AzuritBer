@@ -237,8 +237,8 @@ enum
 enum ActionResult
 {
   NotStarted,
-  Success,
-  Failure
+  ActionSuccess,
+  ActionFailure
 };
 
 // TaskAction Trigger
