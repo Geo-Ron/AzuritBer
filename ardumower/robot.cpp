@@ -68,7 +68,7 @@ RpiRemote MyRpi;
 Screen MyScreen;
 
 
-char* stateNames[] = {"OFF ", "RC  ", "FORW", "ROLL", "REV ", "CIRC", "ERR ", "PFND", "PTRK", "PROL", "PREV", "STAT", "CHARG", "STCHK", "STREV",
+char* stateNames[] = {"OFF ", "RC  ", "FORW", "ROLL", "REV ", "ARC", "ERR ", "PFND", "PTRK", "PROL", "PREV", "STAT", "CHARG", "STCHK", "STREV",
                       "STROL", "STFOR", "MANU", "ROLW", "POUTFOR", "POUTREV", "POUTROLL", "POBSREV", "POBSROLL", "POBSFRWD", "POBSCIRC", "NEXTLANE", "POUTSTOP", "LANEROL1", "LANEROL2",
                       "ROLLTOIN", "WAITREPEAT", "FRWODO", "TESTCOMPAS", "ROLLTOTRACK",
                       "STOPTOTRACK", "AUTOCALIB", "ROLLTOFINDYAW", "TESTMOTOR", "FINDYAWSTOP", "STOPONBUMPER",
@@ -1232,6 +1232,23 @@ void Robot::OdoRampCompute() { //execute only one time when a new state executio
   //Compute when you need to brake the 2 wheels to stop at the ODO
   //Compute the estimate duration of the state so can force next state if the mower is stuck
   //bber400
+
+  if (developerActive)
+  {
+    ShowMessage("Calculated speed RPM (L/R): ");
+    ShowMessage(motorLeftSpeedRpmSet);
+    ShowMessage(" / ");
+    ShowMessageln(motorRightSpeedRpmSet);
+    ShowMessage("current OdometryLeft: ");
+    ShowMessageln(odometryLeft);
+    ShowMessage("current OdometryRight: ");
+    ShowMessageln(odometryRight);
+    ShowMessage("stateEndOdometryLeft: ");
+    ShowMessageln(stateEndOdometryLeft);
+    ShowMessage("stateEndOdometryRight: ");
+    ShowMessageln(stateEndOdometryRight);
+  }
+
   motorSpeedRpmMedian.clear();
 
 
@@ -2883,6 +2900,10 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
   }
   else if (newTask == RETURN_TO_DEFAULT && statusAtDefaultTask == true) {
     //requesting a second return to default. will return to change nothing
+    if (developerActive)
+    {
+      ShowMessageln("Rerequested return to default. returning");
+    }
     return;
   } else {
     statusAtDefaultTask = false;
@@ -3172,8 +3193,8 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     motorLeftSpeedRpmSet = taskActions[TaskActionIndex].Speed;
     //bber60
 
-    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * taskActions[TaskActionIndex].Distance); // set a very large distance 300 ml for random mowing
-    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * taskActions[TaskActionIndex].Distance);
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * (taskActions[TaskActionIndex].Distance)); // set a very large distance 300 ml for random mowing
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * (taskActions[TaskActionIndex].Distance));
     // if ((mowPatternCurr == MOW_LANES) && (!justChangeLaneDir))
     // {                                                                                               //it s a not new lane so limit the forward distance
     //   stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * actualLenghtByLane * 100); //limit the lenght
@@ -3206,10 +3227,13 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     }
     motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * taskActions[TaskActionIndex].Speed;
     motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * taskActions[TaskActionIndex].Speed;
+
     // stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     // stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     stateEndOdometryLeft = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm * Direction);
     stateEndOdometryRight = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm * Direction);
+
+    
     OdoRampCompute();
     break;
 
@@ -5117,6 +5141,50 @@ void Robot::checkTilt() {
   }
 }
 
+//Calculate Odo Movement
+void Robot::calcOdoMovement(){
+  // Evaluate if we are standing still
+  if ((motorLeftPWMCurr == 0) && (motorRightPWMCurr == 0))
+  {
+    if (developerActive)
+    {
+      ShowMessageln("Detected Standstill. PWM: ");
+      ShowMessageln(motorLeftPWMCurr);
+      ShowMessageln(motorRightPWMCurr);
+    }
+    standingStill = true;
+  }
+  else
+  {
+    standingStill = false;
+  }
+
+  // Calculate if Odometry has passed the desired end state
+  //     if (motorLeftSpeedRpmSet == 0 || motorRightSpeedRpmSet == 0)
+  // {
+  if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryLeft - odometryLeft < 0)
+  {
+    leftOdoCompleted = true;
+  }
+  else
+  {
+    leftOdoCompleted = false;
+  }
+
+  if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryRight - odometryRight < 0)
+  {
+    rightOdoCompleted = true;
+  }
+  else
+  {
+    rightOdoCompleted = false;
+  }
+  // }
+  //calculate distance in cm since last state change and note this on the current task action
+  taskActions[TaskActionIndex].ActualDistanceWheelLeft = abs(odometryLeft - stateStartOdometryLeft) * int(odometryTicksPerCm);
+  taskActions[TaskActionIndex].ActualDistanceWheelRight = abs(odometryRight - stateStartOdometryRight) * int(odometryTicksPerCm);
+}
+
 // check if mower is stuck ToDo: take HDOP into consideration if gpsSpeed is reliable
 void Robot::checkIfStuck() {
   if (millis() < nextTimeCheckIfStuck) return;
@@ -5294,9 +5362,6 @@ void Robot::checkTimeout() {
 void Robot::loop()  {
   stateTime = millis() - stateStartTime;
   int steer;
-  boolean leftOdoCompleted;
-  boolean rightOdoCompleted;
-  boolean standingStill;
 
       ADCMan.run();
   if (perimeterUse) perimeter.run();
@@ -5403,37 +5468,7 @@ void Robot::loop()  {
 
   }
 
-// Evaluate if we are standing still
-  if ((motorLeftPWMCurr == 0) && (motorRightPWMCurr == 0)) {
-    standingStill = true;
-  } else {
-    standingStill = false;
-  }
 
-      // Calculate if Odometry has passed the desired end state
-      if (motorLeftSpeedRpmSet == 0 || motorRightSpeedRpmSet == 0)
-  {
-    if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryLeft - odometryLeft < 0)
-    {
-      leftOdoCompleted = true;
-    }
-    else
-    {
-      leftOdoCompleted = false;
-    }
-
-    if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryRight - odometryRight < 0)
-    {
-      rightOdoCompleted = true;
-    }
-    else
-    {
-      rightOdoCompleted = false;
-    }
-  }
-    //calculate distance in cm since last state change and note this on the current task action
-    taskActions[TaskActionIndex].ActualDistanceWheelLeft = abs(odometryLeft - stateStartOdometryLeft) * odometryTicksPerCm;
-    taskActions[TaskActionIndex].ActualDistanceWheelRight = abs(odometryRight - stateStartOdometryRight) * odometryTicksPerCm;
 // state machine - things to do *PERMANENTLY* for current state
 // robot state machine
 
@@ -5580,8 +5615,9 @@ case STATE_FORWARD_ODO:
 case STATE_DRIVING:
   // driving with odometry control
   motorControlOdo();
+  calcOdoMovement();
 
-  if (leftOdoCompleted || rightOdoCompleted)
+      if (leftOdoCompleted || rightOdoCompleted)
   {
     if (standingStill){
     taskActions[TaskActionIndex].Result = ActionSuccess;
@@ -5638,6 +5674,7 @@ case STATE_ROLL_WAIT: //not use ??
 case STATE_ARC:
   // not use
   motorControlOdo();
+  calcOdoMovement();
   if (leftOdoCompleted || rightOdoCompleted)
   {
     if (standingStill)
@@ -5762,6 +5799,7 @@ case STATE_REVERSE:
 
 case STATE_ROLL:
   motorControlOdo();
+  calcOdoMovement();
   // if (rollDir == RIGHT)
   // {
   //   if ((odometryRight <= stateEndOdometryRight) && (odometryLeft >= stateEndOdometryLeft))

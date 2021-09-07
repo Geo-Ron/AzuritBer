@@ -538,7 +538,10 @@ class Robot
     int newtagRotAngle2;
     int newtagDistance1;
     int newtagDistance2;
-    
+    boolean leftOdoCompleted;
+    boolean rightOdoCompleted;
+    boolean standingStill;
+
     //unsigned long stateMaxiTime;  // maybe safety if the odometry is not reach in this time error
 
     int angleCorresp;
@@ -990,9 +993,10 @@ class Robot
     virtual void motorControlPerimeter();
     virtual void readDHT22();
     virtual void motorMowControl();
+    virtual void calcOdoMovement();
 
-    // date & time
-    virtual void setDefaultTime();
+        // date & time
+        virtual void setDefaultTime();
 
     // set reverse
     virtual void reverseOrBidir(byte aRollDir);
