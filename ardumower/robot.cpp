@@ -2959,7 +2959,7 @@ void Robot::requestNextState()
     {
       ShowMessageln("Lastresult was success");
       ShowMessage("Distance: ");
-      ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft)
+      ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
     }
     if (taskActions[TaskActionIndex].IsFinalAction == true)
     {
