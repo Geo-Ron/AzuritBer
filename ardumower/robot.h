@@ -125,7 +125,7 @@ enum {
 };
 
 // finate state machine states NEVER INSERT ALWAYS ADD TO END 
-enum {
+enum states {
   STATE_OFF,          // off
   STATE_REMOTE,       // model remote control (R/C)
   STATE_FORWARD,      // drive forward
@@ -202,7 +202,7 @@ enum { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL
 enum { LEFT, RIGHT };
 
 // mow patterns
-enum
+enum mowPatterns
 {
   MOW_RANDOM,
   MOW_LANES,
@@ -218,7 +218,7 @@ enum { CONSOLE_SENSOR_COUNTERS, CONSOLE_SENSOR_VALUES, CONSOLE_PERIMETER, CONSOL
 
 // tasks.
 // These have a set of states, the result in to the desired output
-enum
+enum Tasks
 {
   WAITING,
   DRIVE, // Drive forward and keep heading

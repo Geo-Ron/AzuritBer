@@ -197,6 +197,7 @@ Robot::Robot() {
   taskTrigger = {None, false, false, false};
   taskPrevious = taskCurr = WAIT;
   taskRetryCounter = 0;
+  TaskActionIndex = 0;
 
   perimeterMag = 0;
   perimeterInside = true;
@@ -2875,7 +2876,7 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
   if(newTask == RETURN_TO_DEFAULT)
   {
     // task has completed all actions, returning to default behaviour
-    newTask = statusDefaultStates[statusCurr]
+    newTask = statusDefaultStates[statusCurr];
     // switch (statusCurr)
     // {
     // case TESTING:
@@ -2884,7 +2885,7 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
 
     // default:
     //  newTask = WAITING;
-    }
+    //}
   }
 
  
@@ -3006,10 +3007,10 @@ void Robot::requestNextState()
       taskRollBack = false;
       taskRetryCounter++;
 
-      //decide possible actions
+      //decide possible actions after rolling back an action
       switch (taskActions[TaskActionIndex].state)
       {
-      case ARC:
+      case STATE_ARC:
         if (taskRetryCounter < 4)
         {                                                                                      // remember: a rollback counts as extra try. first rollback sets counter to zero
           taskActions[TaskActionIndex].Diameter = taskActions[TaskActionIndex].Diameter * 1.5; // double the diameter on first try
@@ -3021,7 +3022,7 @@ void Robot::requestNextState()
         else
         {
           // give up and turn into a new lane
-          setNewTask(TURN);
+          setNewTask(TURN, false);
         }
         }
     }
@@ -3075,6 +3076,16 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     ShowMessageln(stateNames[stateCurr]);
     ShowMessage("Next state would be ");
     ShowMessageln(stateNames[stateNew]);
+    ShowMessage("Distance: ");
+    ShowMessageln(taskActions[TaskActionIndex].Distance]);
+    ShowMessage("Diameter: ");
+    ShowMessageln(taskActions[TaskActionIndex].Diameter]);
+    ShowMessage("Speed: ");
+    ShowMessageln(taskActions[TaskActionIndex].Speed]);
+    ShowMessage("Heading: ");
+    ShowMessageln(taskActions[TaskActionIndex].Heading]);
+    ShowMessage("Angle: ");
+    ShowMessageln(taskActions[TaskActionIndex].Angle]);
   }
   byte dir = LEFT; // should be removed
   //TaskActionIndex++;
