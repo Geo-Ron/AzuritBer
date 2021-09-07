@@ -3022,9 +3022,9 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 {
   if (developerActive)
   {
-    ShowMessageln("Entered setNextState(). Previous state was:");
+    ShowMessage("Entered setNextState(). Previous state was:");
     ShowMessageln(stateNames[stateCurr]);
-    ShowMessageln("Next state would be");
+    ShowMessage("Next state would be ");
     ShowMessageln(stateNames[stateNew]);
   }
   byte dir = LEFT; // should be removed

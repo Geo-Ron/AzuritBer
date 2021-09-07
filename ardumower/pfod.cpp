@@ -1064,7 +1064,7 @@ void RemoteControl::processOdometryMenu(String pfodCmd) {
   else if (pfodCmd.startsWith("l04"))
     processSlider(pfodCmd, robot->odometryTicksPerRevolution, 1);
   else if (pfodCmd.startsWith("l05"))
-    processSlider(pfodCmd, robot->odometryWheelDiameterCm, 1);
+    processSlider(pfodCmd, robot->odometryWheelDiameterCm, 0.1);
 
   sendOdometryMenu(true);
 }
