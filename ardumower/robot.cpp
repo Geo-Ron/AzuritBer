@@ -184,6 +184,7 @@ Robot::Robot() {
   turnAngle = 0; // the angle to which to turn to
   ArcRadius = 1; //radius of an arc to drive
   taskActions[0] = {STATE_OFF, 0, 0, 0, 0, -720, NotStarted, None, 0, 0, true};
+  taskTrigger = {None, false,false,false};
   taskPrevious = taskCurr = WAIT;
   taskRetryCounter = 0;
 

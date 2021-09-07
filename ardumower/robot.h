@@ -255,10 +255,21 @@ enum ActionResultTrigger
   highGrassTrigger,
   ManualTrigger,
   SchedulerTrigger,
-  IMUTrigger
+  IMUTrigger,
+  rainTrigger
 };
 
-// Define the object
+// Define the trigger object
+struct taskTrigger_t
+{ 
+ActionResultTrigger trigger;
+boolean isLeft;
+boolean isCenter;
+boolean isRight;
+};
+typedef struct taskTrigger_t taskTrigger_t;
+
+// Define the taskactions object
 struct taskaction_t
 {
   byte state; // the robot state (action) to do
@@ -320,6 +331,7 @@ class Robot
     byte taskCurr;
     byte taskPrevious;
     int taskRetryCounter;
+    taskTrigger_t taskTrigger; // register the last trigger
 
     unsigned long stateTime;
     char* stateName();
