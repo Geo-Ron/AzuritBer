@@ -2958,6 +2958,8 @@ void Robot::requestNextState()
     if (developerActive)
     {
       ShowMessageln("Lastresult was success");
+      ShowMessage("Distance: ");
+      ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft)
     }
     if (taskActions[TaskActionIndex].IsFinalAction == true)
     {
