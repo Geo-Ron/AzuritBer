@@ -119,7 +119,7 @@
 // redirect 'Console' to -->'Serial' so the Raspberry PI receive all message console data
 
 //#define Console Serial
-#define Console SerialUSB
+#define Console Serial
 #define CONSOLE_BAUDRATE    115200       // baudrate used for Raspberry PI console
 
 #define Enable_DueWatchdog true
