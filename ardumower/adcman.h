@@ -56,7 +56,7 @@ enum {
 #define ADC_CHANNEL_COUNT_MAX 12
 
 // one channel data
-typedef struct ADCStruct {  
+struct ADCStruct {  
   int sampleCount;
   byte pin;  
   int8_t *samples;
@@ -67,6 +67,7 @@ typedef struct ADCStruct {
   boolean convComplete;
   boolean autoCalibrate;    
 };
+typedef struct ADCStruct ADCStruct;
 
 
 class ADCManager

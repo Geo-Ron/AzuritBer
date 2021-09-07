@@ -280,8 +280,8 @@ struct taskaction_t
   // int DistanceWheelRight; //Calculated Distance in cm, -1 if not set
   // int SpeedWheelLeft;     //Target wheel speed in rpm, always defined
   // int SpeedWheelRight;    //Target wheel speed in rpm, always defined
-  int Heading; //heading to roll to, -720 when not set
-  int Angle;   //Angle to turn, -720 when not set
+  float Heading; //heading to roll to, -720 when not set
+  float Angle;   //Angle to turn, -720 when not set
   ActionResult Result;
   ActionResultTrigger ResultTrigger;
   int ActualDistanceWheelLeft;
