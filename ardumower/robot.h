@@ -190,8 +190,9 @@ enum {
   STATE_PERI_OUT_STOP_ROLL_TOTRACK, // after the mower rool to track we need to stop the right motor because it's reverse and the track is forward
   STATE_PERI_STOP_TO_FAST_START,  // after the mower find a tag for find a new start entry point
   STATE_CALIB_MOTOR_SPEED,  // we need to know how may ticks the motor can do in 1 ms to compute the maxododuration 
-  STATE_ACCEL_FRWRD // when start from calib or off need to accel before motorodo
+  STATE_ACCEL_FRWRD, // when start from calib or off need to accel before motorodo
   
+  STATE_DRIVING
 };
 
 // status mode
@@ -228,7 +229,8 @@ enum
   GOTO_STATION,
   GOTO_NEW_AREA,
   // CHANGE_LANE, //change lane is part of turn
-  CHARGE
+  CHARGE,
+  RETURN_TO_DEFAULT
 };
 
 // TaskAction Result
@@ -259,7 +261,7 @@ enum ActionResultTrigger
 // Define the object
 struct taskaction_t
 {
-  byte state;
+  byte state; // the robot state (action) to do
   int Distance; //Distance in cm , 0 if not set
   int Diameter; // Diameter of the circle to rotate in cm. 0 if not set
   int Speed;    // Speed in RPM
@@ -273,6 +275,7 @@ struct taskaction_t
   ActionResultTrigger ResultTrigger;
   int ActualDistanceWheelLeft;
   int ActualDistanceWheelRight;
+  boolean IsFinalAction; //Specifies if this is the last action in a sequence
 };
 typedef struct taskaction_t taskaction_t;
 
@@ -316,13 +319,14 @@ class Robot
 
     byte taskCurr;
     byte taskPrevious;
+    int taskRetryCounter;
 
     unsigned long stateTime;
     char* stateName();
     char* statusName();
     char *taskName();
     char *nextStateName();
-    taskaction_t TaskActions[1];
+    taskaction_t taskActions[5];
     int TaskActionIndex;
 
     unsigned long stateStartTime;
@@ -870,11 +874,11 @@ class Robot
     virtual void setMotorMowRPMState(boolean motorMowRpmState);
 
     //Task Logic
-    virtual void setNewTask(byte newTask, byte rollBack);
+    virtual void setNewTask(byte newTask, boolean rollBack);
     virtual void requestNextState();
 
     // state machine
-    virtual void setNextState(byte stateNew, byte dir);
+    virtual void setNextState(byte stateNew, boolean rollBack, boolean reTry);
 
     // motor
     virtual void setMotorPWM(int pwmLeft, int pwmRight, boolean useAccel);
@@ -989,11 +993,6 @@ class Robot
 
 
     virtual void beeper();
-    
-
-
-    
-
 };
 
 
