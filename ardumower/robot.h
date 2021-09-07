@@ -51,7 +51,7 @@
 */
 
 // code version
-#define VER "1.62-Azuritber GY-521"
+#define VER "2.0.0-Azuritber GY-521"
 
 
 // sensors
@@ -196,7 +196,7 @@ enum states {
 };
 
 // status mode
-enum { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL, REMOTE, IN_ERROR, IN_STATION, TESTING,WAITSIG2,WIRE_MOWING, MOWING };
+enum Status { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL, REMOTE, IN_ERROR, IN_STATION, TESTING,WAITSIG2,WIRE_MOWING, MOWING };
 
 // roll types
 enum { LEFT, RIGHT };
@@ -329,10 +329,13 @@ class Robot
 
     byte statusCurr;
 
+    //specify the default state for every Status when nothing happens.
     int statusDefaultStates[15];
     //byte statusLast;
     //byte statusNext;
 
+    // to reference if the current task default
+    boolean statusAtDefaultTask;
     byte taskCurr;
     byte taskPrevious;
     int taskRetryCounter;

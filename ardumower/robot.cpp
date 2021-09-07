@@ -113,6 +113,7 @@ Robot::Robot() {
 
   stateLast = stateCurr = stateNext = STATE_OFF;
   statusCurr = WAIT; //initialise the status on power up
+  statusAtDefaultTask = false;
 
   // set the default that a status would be doing if nothing happened
   statusDefaultStates[WAIT] = STATE_OFF;
@@ -2870,22 +2871,21 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
     ShowMessageln(taskName());
   }
   // if (newTask == taskCurr) return;
-  // taskPrevious = taskCurr;
+  taskPrevious = taskCurr;
   // if (newTask == RETURN_TO_DEFAULT && taskCurr == RETURN_TO_DEFAULT )
   // return;
-  if(newTask == RETURN_TO_DEFAULT)
+  if(newTask == RETURN_TO_DEFAULT && statusAtDefaultTask == false)
   {
     // task has completed all actions, returning to default behaviour
+    // definition of default states for every status are at the Class Robot
+    statusAtDefaultTask = true;
     newTask = statusDefaultStates[statusCurr];
-    // switch (statusCurr)
-    // {
-    // case TESTING:
-    //   newTask = WAITING;
-    // //case WAITING:
-
-    // default:
-    //  newTask = WAITING;
-    //}
+  }
+  else if (newTask == RETURN_TO_DEFAULT && statusAtDefaultTask == true) {
+    //requesting a second return to default. will return to change nothing
+    return;
+  } else {
+    statusAtDefaultTask = false;
   }
 
  
@@ -3077,15 +3077,15 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     ShowMessage("Next state would be ");
     ShowMessageln(stateNames[stateNew]);
     ShowMessage("Distance: ");
-    ShowMessageln(taskActions[TaskActionIndex].Distance]);
+    ShowMessageln(taskActions[TaskActionIndex].Distance);
     ShowMessage("Diameter: ");
-    ShowMessageln(taskActions[TaskActionIndex].Diameter]);
+    ShowMessageln(taskActions[TaskActionIndex].Diameter);
     ShowMessage("Speed: ");
-    ShowMessageln(taskActions[TaskActionIndex].Speed]);
+    ShowMessageln(taskActions[TaskActionIndex].Speed);
     ShowMessage("Heading: ");
-    ShowMessageln(taskActions[TaskActionIndex].Heading]);
+    ShowMessageln(taskActions[TaskActionIndex].Heading);
     ShowMessage("Angle: ");
-    ShowMessageln(taskActions[TaskActionIndex].Angle]);
+    ShowMessageln(taskActions[TaskActionIndex].Angle);
   }
   byte dir = LEFT; // should be removed
   //TaskActionIndex++;
