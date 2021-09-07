@@ -196,7 +196,7 @@ enum {
 };
 
 // status mode
-enum { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL, REMOTE, IN_ERROR, IN_STATION, TESTING,WAITSIG2,WIRE_MOWING };
+enum { WAIT,NORMAL_MOWING,SPIRALE_MOWING,BACK_TO_STATION, TRACK_TO_START, MANUAL, REMOTE, IN_ERROR, IN_STATION, TESTING,WAITSIG2,WIRE_MOWING, MOWING };
 
 // roll types
 enum { LEFT, RIGHT };
@@ -221,7 +221,7 @@ enum { CONSOLE_SENSOR_COUNTERS, CONSOLE_SENSOR_VALUES, CONSOLE_PERIMETER, CONSOL
 enum
 {
   WAITING,
-      DRIVE, // Drive forward and keep heading
+  DRIVE, // Drive forward and keep heading
   TURN,      //change lane, or direction
   AVOID_OBSTACLE,
   // LEAVE_STATION, //leave station is part of GOTO_START
@@ -245,18 +245,21 @@ enum ActionResult
 enum ActionResultTrigger
 {
   None,
-  PerimeterTrigger,
-  SonarTrigger,
   BumperTrigger,
-  motorCurrentTrigger,
-  mowerCurrentTrigger,
-  TiltTrigger,
+  DistanceTrigger,
   GPSTrigger,
   highGrassTrigger,
-  ManualTrigger,
-  SchedulerTrigger,
   IMUTrigger,
-  rainTrigger
+  ManualTrigger,
+  motorCurrentTrigger,
+  mowerCurrentTrigger,
+  PerimeterTrigger,
+  rainTrigger,
+  SchedulerTrigger,
+  SonarTrigger,
+  TiltTrigger,
+  TimeoutTrigger
+
 };
 
 // Define the trigger object
@@ -325,6 +328,8 @@ class Robot
     byte stateNext;
 
     byte statusCurr;
+
+    int statusDefaultStates[15];
     //byte statusLast;
     //byte statusNext;
 

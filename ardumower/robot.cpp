@@ -114,6 +114,16 @@ Robot::Robot() {
   stateLast = stateCurr = stateNext = STATE_OFF;
   statusCurr = WAIT; //initialise the status on power up
 
+  // set the default that a status would be doing if nothing happened
+  statusDefaultStates[WAIT] = STATE_OFF;
+  statusDefaultStates[MOWING] = STATE_DRIVING;
+  statusDefaultStates[BACK_TO_STATION] = STATE_PERI_TRACK;
+  statusDefaultStates[TRACK_TO_START] = STATE_PERI_TRACK;
+  statusDefaultStates[MANUAL] = STATE_MANUAL;
+  statusDefaultStates[REMOTE] = STATE_REMOTE;
+  statusDefaultStates[IN_ERROR] = STATE_ERROR;
+  statusDefaultStates[TESTING] = STATE_OFF;
+
   stateTime = 0;
   idleTimeSec = 0;
   statsMowTimeTotalStart = false;
@@ -127,7 +137,7 @@ Robot::Robot() {
   motorRightRpmCurr = motorLeftRpmCurr = 0;
   lastMotorRpmTime = 0;
   lastSetMotorSpeedTime = 0;
-  motorLeftSpeedRpmSet =  motorRightSpeedRpmSet = 0;
+  motorLeftSpeedRpmSet = motorRightSpeedRpmSet = 0;
   motorLeftPWMCurr = motorRightPWMCurr = 0;
   motorRightSenseADC = motorLeftSenseADC = 0;
   motorLeftSenseCurrent = motorRightSenseCurrent = 0;
@@ -148,10 +158,10 @@ Robot::Robot() {
   motorMowEnable = false;
   motorMowForceOff = false;
   //ignoreRfidTag = false;
-  motorMowSpeedPWMSet = motorMowSpeedMinPwm;  //use to set the speed of the mow motor
+  motorMowSpeedPWMSet = motorMowSpeedMinPwm; //use to set the speed of the mow motor
   motorMowPWMCurr = 0;
   motorMowSenseADC = 0;
-  motorMowSenseCurrent  = 0;
+  motorMowSenseCurrent = 0;
   motorMowPower = 0;
   motorMowSenseCounter = 0;
   motorMowSenseErrorCounter = 0;
@@ -162,13 +172,13 @@ Robot::Robot() {
   nextTimeCheckCurrent = 0;
   lastTimeMotorMowStuck = 0;
   totalDistDrive = 0;
-  whereToResetSpeed = 50000;  // initial value to 500 meters
+  whereToResetSpeed = 50000; // initial value to 500 meters
 
   bumperLeftCounter = bumperRightCounter = 0;
   bumperLeft = bumperRight = false;
 
-  dropLeftCounter = dropRightCounter = 0;                                                                                              // Dropsensor - Absturzsensor
-  dropLeft = dropRight = false;                                                                                                        // Dropsensor - Absturzsensor
+  dropLeftCounter = dropRightCounter = 0; // Dropsensor - Absturzsensor
+  dropLeft = dropRight = false;           // Dropsensor - Absturzsensor
 
   gpsLat = gpsLon = gpsX = gpsY = 0;
   robotIsStuckCounter = 0;
@@ -184,7 +194,7 @@ Robot::Robot() {
   turnAngle = 0; // the angle to which to turn to
   ArcRadius = 1; //radius of an arc to drive
   taskActions[0] = {STATE_OFF, 0, 0, 0, 0, -720, NotStarted, None, 0, 0, true};
-  taskTrigger = {None, false,false,false};
+  taskTrigger = {None, false, false, false};
   taskPrevious = taskCurr = WAIT;
   taskRetryCounter = 0;
 
@@ -2860,19 +2870,20 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
   }
   // if (newTask == taskCurr) return;
   // taskPrevious = taskCurr;
-  if (newTask == RETURN_TO_DEFAULT && taskCurr == RETURN_TO_DEFAULT )
-  return;
+  // if (newTask == RETURN_TO_DEFAULT && taskCurr == RETURN_TO_DEFAULT )
+  // return;
   if(newTask == RETURN_TO_DEFAULT)
   {
     // task has completed all actions, returning to default behaviour
-    switch (statusCurr)
-    {
-    case TESTING:
-      newTask = WAITING;
-    //case WAITING:
+    newTask = statusDefaultStates[statusCurr]
+    // switch (statusCurr)
+    // {
+    // case TESTING:
+    //   newTask = WAITING;
+    // //case WAITING:
 
-    default:
-     newTask = WAITING;
+    // default:
+    //  newTask = WAITING;
     }
   }
 
@@ -2883,19 +2894,20 @@ if (statusCurr == TESTING) {
   switch (newTask)
   {
   case WAITING:
+    // Explainer: see definition of struct taskaction_t in robot.h
     taskActions[0] = {STATE_OFF, 0, 0, 0, -720, -720, NotStarted, None, 0, 0, true};
     break;
   case DRIVE:
     taskActions[0] = {STATE_DRIVING, 100, 0, motorSpeedMaxRpm/2, imuDriveHeading, -720, NotStarted, None, 0, 0, true};
     break;
   case AVOID_OBSTACLE:
-    taskActions[0] = {STATE_DRIVING, 5, 0, -motorSpeedMaxRpm / 3, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[0] = {STATE_DRIVING, 50, 0, -motorSpeedMaxRpm / 3, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
     taskActions[1] = {STATE_ROLL, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, false};
     taskActions[2] = {STATE_ARC, 0, 100, motorSpeedMaxRpm / 3, imuDriveHeading, 180, NotStarted, None, 0, 0, false};
     taskActions[3] = {STATE_ARC, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, true};
     break;
   case TURN:
-    taskActions[0] = {STATE_DRIVING, 5, -1, -motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[0] = {STATE_DRIVING, 50, -1, -motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
     taskActions[1] = {STATE_ROLL, 0, -1, motorSpeedMaxRpm, -720, 90, NotStarted, None, 0, 0, true};
     break;
   default:
@@ -2960,26 +2972,58 @@ void Robot::requestNextState()
       ShowMessageln("Lastresult was success");
       ShowMessage("Distance: ");
       ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
+      ShowMessage("Action was a rollback: ");
+      ShowMessageln(taskRollBack);
     }
     if (taskActions[TaskActionIndex].IsFinalAction == true)
     {
+      //Reached the end of a action sequence in the array
       if (developerActive)
       {
         ShowMessageln("Last action completed was FinalAction");
       }
-      if (taskCurr == taskPrevious) { //hier zit nog een issue
-        if (developerActive)
-        {
-          ShowMessageln("Previous task was equal to current task?");
-        }
-        return;
-      } else {
-      setNewTask(RETURN_TO_DEFAULT, false); 
-      }// klopt niet
+      // if (taskCurr == taskPrevious) { //hier zit nog een issue
+      //   if (developerActive)
+      //   {
+      //     ShowMessageln("Previous task was equal to current task?");
+      //   }
+      //   return;
       // } else {
-        // taskRetryCounter++;
-        // setNextState(taskActions[TaskActionIndex].state, false, true);
+      setNewTask(RETURN_TO_DEFAULT, false);
       // }
+    }
+    else if (taskRollBack)
+    {
+      //previous action has been successfully rolled back. This could not have been the latest task
+      if (developerActive)
+      {
+        ShowMessageln("Rollback was success. Retrying with different parameters");
+        ShowMessage("Distance: ");
+        ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
+        ShowMessage("Action was a rollback: ");
+        ShowMessageln(taskRollBack);
+      }
+      taskRollBack = false;
+      taskRetryCounter++;
+
+      //decide possible actions
+      switch (taskActions[TaskActionIndex].state)
+      {
+      case ARC:
+        if (taskRetryCounter < 4)
+        {                                                                                      // remember: a rollback counts as extra try. first rollback sets counter to zero
+          taskActions[TaskActionIndex].Diameter = taskActions[TaskActionIndex].Diameter * 1.5; // double the diameter on first try
+        }
+        else if (taskRetryCounter < 6)
+        {
+          taskActions[TaskActionIndex].Angle = taskActions[TaskActionIndex].Angle * -1; // change the direction
+        }
+        else
+        {
+          // give up and turn into a new lane
+          setNewTask(TURN);
+        }
+        }
     }
     else
     {
@@ -2997,12 +3041,15 @@ void Robot::requestNextState()
   }
   else if (taskActions[TaskActionIndex].Result == ActionFailure)
   {
+    // rollback last action
+
+    taskRollBack = true;
+    taskRetryCounter++;
     if (developerActive)
     {
-      ShowMessageln("Lastresult was Failure");
+      ShowMessage("Lastresult was Failure. retryCounter: ");
+      ShowMessageln(taskRetryCounter);
     }
-    // rollback last action
-    taskRollBack = true;
     setNextState(taskActions[TaskActionIndex].state, true, false);
   } else {
     if (developerActive)
@@ -3013,7 +3060,7 @@ void Robot::requestNextState()
     }
     // Result has to be NotStarted
     taskRollBack = false;
-    taskRetryCounter = 0;
+    taskRetryCounter = -1;
     setNextState(taskActions[TaskActionIndex].state, false, false);
   }
 }
