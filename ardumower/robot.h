@@ -876,6 +876,7 @@ class Robot
     virtual void setup();
     // robot main loop
     virtual void loop();
+    virtual void ShowMemory(void);
     virtual void resetIdleTime();
 
     // call this from R/C control interrupt

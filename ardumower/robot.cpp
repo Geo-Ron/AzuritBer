@@ -299,12 +299,16 @@ char *Robot::taskName()
 
 char *Robot::nextStateName()
 {
+  if (developerActive)
+  {
+    ShowMessageln("Retrieving next task name");
+  }
   if (taskActions[TaskActionIndex].IsFinalAction != true)
   {
     // int NextTaskActionIndex = TaskActionIndex + 1;
     return taskNames[taskActions[TaskActionIndex + 1].state];
-    }
-  return taskNames[WAITING];
+    } else {
+  return taskNames[RETURN_TO_DEFAULT];}
 }
 
     char *Robot::mowPatternName()
@@ -2068,7 +2072,11 @@ void Robot::setUserSwitches() {
   setActuator(ACT_USER_SW3, userSwitch3);
 }
 
-
+void Robot::ShowMemory(void)
+{
+  Console.println("Unable to find a way to calculate DUE memory usage... :-(");
+  
+}
 
 void Robot::setup()  {
 
@@ -2153,6 +2161,7 @@ void Robot::setup()  {
   Console.println ();
   // Console.print ("        Free memory is :   ");
   // Console.println (freeMemory ());
+  ShowMemory();
 
   // watchdog enable at the end of the setup
   if (Enable_DueWatchdog) {
@@ -2844,6 +2853,11 @@ void Robot::setDefaults() {
 // start a new task
 void Robot::setNewTask(byte newTask, boolean rollBack)
 {
+  if (developerActive)
+  {
+    ShowMessageln("Entered setNewTask. Current task:");
+    ShowMessageln(taskName());
+  }
   // if (newTask == taskCurr) return;
   // taskPrevious = taskCurr;
   if(newTask == RETURN_TO_DEFAULT)
@@ -2857,7 +2871,8 @@ void Robot::setNewTask(byte newTask, boolean rollBack)
       newTask = WAITING;
     }
   }
-  
+
+ 
   TaskActionIndex = 0;
 
 if (statusCurr == TESTING) {
@@ -2909,6 +2924,11 @@ if (statusCurr == TESTING) {
 }
   taskPrevious = taskCurr;
   taskCurr = newTask;
+  if (developerActive)
+  {
+    ShowMessageln("New task:");
+    ShowMessageln(taskName());
+  }
   requestNextState();
 
 } // end setNewTask
@@ -2916,11 +2936,23 @@ if (statusCurr == TESTING) {
 //request Next State
 void Robot::requestNextState()
 {
+  if (developerActive)
+  {
+    ShowMessageln("Entered requestNextState()");
+  }
+
   if (taskActions[TaskActionIndex].Result = Success)
   {
+    if (developerActive)
+    {
+      ShowMessageln("Lastresult was success");
+    }
     if (taskActions[TaskActionIndex].IsFinalAction == true)
     {
-      // if (taskRollBack == true) {
+      if (developerActive)
+      {
+        ShowMessageln("Last action completed was FinalAction");
+      }
       setNewTask(RETURN_TO_DEFAULT, false); // klopt niet
       // } else {
         // taskRetryCounter++;
@@ -2929,18 +2961,32 @@ void Robot::requestNextState()
     }
     else
     {
+      
       taskRollBack = false;
       taskRetryCounter = 0;
       TaskActionIndex++;
+      if (developerActive)
+      {
+        ShowMessageln("Starting next action:");
+        ShowMessageln("Starting next action:");
+      }
       setNextState(taskActions[TaskActionIndex].state, false, false);
     }
   }
   else if (taskActions[TaskActionIndex].Result = Failure)
   {
+    if (developerActive)
+    {
+      ShowMessageln("Lastresult was Failure");
+    }
     // rollback last action
     taskRollBack = true;
     setNextState(taskActions[TaskActionIndex].state, true, false);
   } else {
+    if (developerActive)
+    {
+      ShowMessageln("Lastresult was unknown");
+    }
     // Result has to be NotStarted
     taskRollBack = false;
     taskRetryCounter = 0;
@@ -2952,6 +2998,13 @@ void Robot::requestNextState()
 // called *ONCE* to set to a *NEW* state
 void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 {
+  if (developerActive)
+  {
+    ShowMessageln("Entered setNextState. Previous state was:");
+    ShowMessageln(stateNames[stateCurr]);
+    ShowMessageln("Next state would be");
+    ShowMessageln(stateNames[stateNew]);
+  }
   byte dir = LEFT; // should be removed
   //TaskActionIndex++;
   stateTime = millis() - stateStartTime; //last state duration
