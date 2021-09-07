@@ -67,10 +67,8 @@ void Robot::checkTimer() {
               Console.println(areaToGo);
               Console.print(F(" Distance before start "));
               Console.println(whereToStart);
-              
-              
-              setNextState(STATE_STATION_REV, 0);
 
+              setNextState(STATE_STATION_REV, false, false);
             }
           }
         }
@@ -79,10 +77,10 @@ void Robot::checkTimer() {
             Console.println(F("timer stop triggered"));
             ActualRunningTimer = 99;
             if (perimeterUse) {
-              setNextState(STATE_PERI_FIND, 0);
+              setNextState(STATE_PERI_FIND, false, false);
             }
             else {
-              setNextState(STATE_OFF, 0);
+              setNextState(STATE_OFF, false, false);
             }
           }
         

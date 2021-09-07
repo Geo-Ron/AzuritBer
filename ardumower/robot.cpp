@@ -2908,7 +2908,7 @@ if (statusCurr == TESTING) {
 }
   taskPrevious = taskCurr;
   taskCurr = newTask;
-  requestNextState(taskActions[TaskActionIndex].state);
+  requestNextState();
 
 } // end setNewTask
 
@@ -2951,6 +2951,7 @@ void Robot::requestNextState()
 // called *ONCE* to set to a *NEW* state
 void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 {
+  byte dir = LEFT; // should be removed
   //TaskActionIndex++;
   stateTime = millis() - stateStartTime; //last state duration
   if (stateNew == stateCurr)
@@ -2965,7 +2966,7 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 
   // evaluate new state
   stateNext = stateNew;
-  byte rollDir = dir;
+  byte rollDir = LEFT; // should be removed
 
   switch (stateNew)
   {
@@ -4327,7 +4328,7 @@ void Robot::checkBattery() {
       ShowMessageln(F("  Bat Voltage is very low the state is changed to OFF, so the undervoltage timer start"));
       addErrorCounter(ERR_BATTERY);
       setBeeper(100, 25, 25, 200, 0 );
-      setNextState(STATE_OFF, false, false, false);
+      setNextState(STATE_OFF, false, false);
     }
     else if ((batVoltage < batGoHomeIfBelow) && (stateCurr == STATE_FORWARD_ODO) && (perimeterUse)) {    //actualy in mowing mode with station and perimeter
       ShowMessage(F("Batterie Voltage : "));
@@ -4340,7 +4341,7 @@ void Robot::checkBattery() {
       areaToGo = 1;
       if (RaspberryPIUse) MyRpi.SendStatusToPi();
       periFindDriveHeading = imu.ypr.yaw;
-      setNextState(STATE_PERI_FIND, false, false, false);
+      setNextState(STATE_PERI_FIND, false, false);
     }
 
 
