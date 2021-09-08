@@ -288,9 +288,12 @@ void RemoteControl::sendTestingMenu(boolean update)
   //   serialPort->print(F("|s1~Motor|s2~Mow|s3~Bumper/Button|s4~Sonar|s5~Perimeter|s6~Lawn sensor|s7~IMU|s8~Raspberry"));
   //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
   // }
-  serialPort->println(F("|te01~Test ODO|te02~Test IMU|te03~Test Tasks|te04~Test States}"));
-}
+  serialPort->println(F("|te01~Test ODO|te02~Test IMU"));
+  if (robot->developerActive)
+    serialPort->println(F("|te03~Test Tasks|te04~Test States"));
 
+  serialPort->println(F("}"));
+}
 void RemoteControl::processTestingMenu(String pfodCmd)
 {
   if (pfodCmd == "te01")
@@ -300,7 +303,7 @@ void RemoteControl::processTestingMenu(String pfodCmd)
   else if (pfodCmd == "te03")
     sendTestTasksMenu(false);
   else if (pfodCmd == "te04")
-    sendTestTasksMenu(false);
+    sendTestTasksMenu(true);
   else
     sendTestingMenu(true);
 }

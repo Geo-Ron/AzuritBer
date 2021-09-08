@@ -193,7 +193,7 @@ Robot::Robot() {
 
   taskRollBack = false;
   turnAngle = 180; // the angle to which to turn to
-  ArcRadius = 1; //radius of an arc to drive
+  ArcRadius = 0.5; //radius of an arc to drive
   taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, 0, -720, NotStarted, None, 0, 0, true};
   taskTrigger = {None, false, false, false};
   taskPrevious = taskCurr = WAIT;
@@ -483,6 +483,7 @@ void Robot::loadSaveUserSettings(boolean readflag) {
   eereadwrite(readflag, addr, UseBumperDock);
   eereadwrite(readflag, addr, odometryTicksPerRevolution);
   eereadwrite(readflag, addr, odometryTicksPerCm);
+  odometryWheelDiameterCm = odometryTicksPerRevolution / odometryTicksPerCm / PI;
   eereadwrite(readflag, addr, odometryWheelBaseCm);
   eereadwrite(readflag, addr, autoResetActive);
   eereadwrite(readflag, addr, CompassUse);
@@ -1259,6 +1260,39 @@ void Robot::OdoRampCompute() { //execute only one time when a new state executio
   lastStartOdometryLeft = odometryLeft;
   straightLineTheta = 0;
   motorRightPID.reset();
+  float speeddifferenceRatio = 0;
+
+  if (motorLeftSpeedRpmSet != motorRightSpeedRpmSet && motorLeftSpeedRpmSet != 0 && motorRightSpeedRpmSet != 0 && (abs(motorLeftSpeedRpmSet) > motorSpeedMaxRpm || abs(motorRightSpeedRpmSet) > motorSpeedMaxRpm))
+  {
+    // one of the two set speeds exceeds motorSpeedMaxRPM, while they are different and not 0
+    // this needs to be corrected, maintaining the same speed difference ratio
+
+    speeddifferenceRatio = motorLeftSpeedRpmSet / motorRightSpeedRpmSet;
+
+    if (developerActive)
+    {
+      ShowMessage("Speed will be corrected with ratio: ");
+      ShowMessageln(speeddifferenceRatio);
+    }
+
+    if (speeddifferenceRatio < -1 || speeddifferenceRatio > 1)
+    {
+      // Left rotate quicker then right
+      //  < -1 is left quicker then right, opposite directions
+      // > 1 is left quicker then right
+      motorLeftSpeedRpmSet = motorSpeedMaxRpm * motorLeftSpeedRpmSet / abs(motorLeftSpeedRpmSet);
+      motorRightSpeedRpmSet = motorLeftSpeedRpmSet / speeddifferenceRatio;
+    }
+    else if (speeddifferenceRatio > -1 && speeddifferenceRatio < 1)
+    { // Left rotates slower then right
+      motorRightSpeedRpmSet = motorSpeedMaxRpm * motorRightSpeedRpmSet / abs(motorRightSpeedRpmSet);
+      motorRightSpeedRpmSet = motorRightSpeedRpmSet * speeddifferenceRatio;
+    }
+  }
+
+  // if (PwmRightSpeed > 0) {
+  //   PwmRightSpeed = min(motorSpeedMaxPwm, max(-motorSpeedMaxPwm, map(motorRightSpeedRpmSet, -motorSpeedMaxRpm, motorSpeedMaxRpm, pwm, motorSpeedMaxPwm)));
+  // }
   PwmRightSpeed = min(motorSpeedMaxPwm, max(-motorSpeedMaxPwm, map(motorRightSpeedRpmSet, -motorSpeedMaxRpm, motorSpeedMaxRpm, -motorSpeedMaxPwm, motorSpeedMaxPwm)));
   PwmLeftSpeed = min(motorSpeedMaxPwm, max(-motorSpeedMaxPwm, map(motorLeftSpeedRpmSet, -motorSpeedMaxRpm, motorSpeedMaxRpm, -motorSpeedMaxPwm, motorSpeedMaxPwm)));
   //try to find when we need to brake the wheel (depend of the distance)
@@ -2992,11 +3026,11 @@ void Robot::requestNextState()
   {
     if (developerActive)
     {
-      ShowMessageln("Rollback was success. Retrying with different parameters");
+      ShowMessageln("Last action success.");
       ShowMessage("Distance completed (L/R): ");
       ShowMessage(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
       ShowMessage(" / ");
-      ShowMessage(taskActions[TaskActionIndex].ActualDistanceWheelRight);
+      ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelRight);
       ShowMessage("Action was a rollback: ");
       ShowMessageln(taskRollBack);
     }
@@ -3119,8 +3153,8 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
   if (stateNew == stateCurr)
     return;
 
-  float RatioSpeedLeft;
-  float RatioSpeedRight;
+  // float RatioSpeedLeft;
+  // float RatioSpeedRight;
   float Direction;
 
 //testRon
@@ -3259,15 +3293,21 @@ leftOdoCompleted = rightOdoCompleted = false;
     {
       Direction = 1;
     }
-    RatioSpeedLeft = taskActions[TaskActionIndex].Angle + 0.5 * odometryWheelBaseCm;
-    RatioSpeedRight = taskActions[TaskActionIndex].Angle - 0.5 * odometryWheelBaseCm;
-    motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * taskActions[TaskActionIndex].Speed * Direction;
-    motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * taskActions[TaskActionIndex].Speed * Direction;
+    // RatioSpeedLefttoRight = taskActions[TaskActionIndex].Angle + 0.5 * odometryWheelDiameterCm;
+    // RatioSpeedRight = taskActions[TaskActionIndex].Angle - 0.5 * odometryWheelDiameterCm;
+    // motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * taskActions[TaskActionIndex].Speed * Direction;
+    // motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * taskActions[TaskActionIndex].Speed * Direction;
 
     // stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     // stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-    stateEndOdometryLeft = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm * Direction);
-    stateEndOdometryRight = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm * Direction);
+    float DistanceLeftWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm / 2 * Direction);
+    float DistanceRightWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm / 2 * Direction);
+    float RatioSpeedLefttoRight = DistanceLeftWheelcm / DistanceRightWheelcm;
+    motorLeftSpeedRpmSet = (taskActions[TaskActionIndex].Speed * RatioSpeedLefttoRight + taskActions[TaskActionIndex].Speed) / 2;
+    motorRightSpeedRpmSet = motorLeftSpeedRpmSet / RatioSpeedLefttoRight;
+
+    stateEndOdometryLeft = odometryLeft + DistanceLeftWheelcm * odometryTicksPerCm;
+    stateEndOdometryRight = odometryRight + DistanceRightWheelcm * odometryTicksPerCm;
 
     if (developerActive)
     {
@@ -3275,8 +3315,12 @@ leftOdoCompleted = rightOdoCompleted = false;
       ShowMessageln(motorLeftSpeedRpmSet);
       ShowMessage("MotorRightSpeed: ");
       ShowMessageln(motorRightSpeedRpmSet);
+      ShowMessage("odometryLeft: ");
+      ShowMessageln(odometryLeft);
       ShowMessage("stateEndOdometryLeft: ");
       ShowMessageln(stateEndOdometryLeft);
+      ShowMessage("odometryRight: ");
+      ShowMessageln(odometryRight);
       ShowMessage("stateEndOdometryRight: ");
       ShowMessageln(stateEndOdometryRight);
       ShowMessage("Angle: ");
@@ -5772,7 +5816,7 @@ case STATE_ARC:
   // not use
   motorControlOdo();
   calcOdoMovement();
-  if (leftOdoCompleted || rightOdoCompleted)
+  if (leftOdoCompleted && rightOdoCompleted)
   {
     if (standingStill)
     {
