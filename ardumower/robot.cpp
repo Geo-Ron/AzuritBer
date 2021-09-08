@@ -3156,9 +3156,12 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
   // float RatioSpeedLeft;
   // float RatioSpeedRight;
   float Direction;
+  float DistanceLeftWheelcm ;
+  float DistanceRightWheelcm;
+  float RatioSpeedLefttoRight;
 
-//testRon
-leftOdoCompleted = rightOdoCompleted = false;
+  //testRon
+  leftOdoCompleted = rightOdoCompleted = false;
 
   //TaskActionIndex++;
   //stateTime = millis() - stateStartTime; //last state duration
@@ -3300,9 +3303,9 @@ leftOdoCompleted = rightOdoCompleted = false;
 
     // stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     // stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
-    float DistanceLeftWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm / 2 * Direction);
-    float DistanceRightWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm / 2 * Direction);
-    float RatioSpeedLefttoRight = DistanceLeftWheelcm / DistanceRightWheelcm;
+    DistanceLeftWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm / 2 * Direction);
+    DistanceRightWheelcm = Direction * taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm / 2 * Direction);
+    RatioSpeedLefttoRight = DistanceLeftWheelcm / DistanceRightWheelcm;
     motorLeftSpeedRpmSet = (taskActions[TaskActionIndex].Speed * RatioSpeedLefttoRight + taskActions[TaskActionIndex].Speed) / 2;
     motorRightSpeedRpmSet = motorLeftSpeedRpmSet / RatioSpeedLefttoRight;
 
