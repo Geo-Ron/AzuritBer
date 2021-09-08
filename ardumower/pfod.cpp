@@ -332,7 +332,7 @@ void RemoteControl::sendTestTasksMenu(boolean update)
   //   serialPort->println(F("|s9~Battery|s10~Station|s11~Odometry|s13~Rain Temp Humid|s15~Drop sensor|s14~GPS RFID|i~Timer|s12~Date/time|sx~Factory settings|s16~ByLane Setting}"));
   // }
   serialPort->println(F("|te0301~DRIVE|te0302~Avoid Obstacle"));
-  sendSlider("te0303", F("Avoidance radius"), robot->ArcRadius, "meter", 0.1, 5, 0);
+  sendSlider("te0303", F("Avoidance radius (m)"), robot->ArcRadius, "meter", 0.1, 5, 0);
   serialPort->println(F("|te0304~Turn"));
   sendSlider("te0305", F("Turn angle"), robot->turnAngle, "deg", 1, 360, -360);
   serialPort->println(F("|te0306~Go to Start}"));

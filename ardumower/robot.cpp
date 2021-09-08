@@ -192,9 +192,9 @@ Robot::Robot() {
   rollDir = LEFT;
 
   taskRollBack = false;
-  turnAngle = 0; // the angle to which to turn to
+  turnAngle = 180; // the angle to which to turn to
   ArcRadius = 1; //radius of an arc to drive
-  taskActions[0] = {STATE_OFF, 0, 0, 0, 0, -720, NotStarted, None, 0, 0, true};
+  taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, 0, -720, NotStarted, None, 0, 0, true};
   taskTrigger = {None, false, false, false};
   taskPrevious = taskCurr = WAIT;
   taskRetryCounter = 0;
@@ -246,6 +246,7 @@ Robot::Robot() {
   nextTimeCheckTilt = 0;
   nextTimeOdometry = 0;
   nextTimeOdometryInfo = 0;
+  nextTimeCalcOdoMovement = 0;
   nextTimeBumper = 0;
   nextTimeDrop = 0;                                                                                                                    // Dropsensor - Absturzsensor
   //nextTimeSonar = 0;
@@ -2917,46 +2918,46 @@ if (statusCurr == TESTING) {
   {
   case WAITING:
     // Explainer: see definition of struct taskaction_t in robot.h
-    taskActions[0] = {STATE_OFF, 0, 0, 0, -720, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, -720, -720, NotStarted, None, 0, 0, true};
     break;
   case DRIVE:
-    taskActions[0] = {STATE_DRIVING, 100, 0, motorSpeedMaxRpm/2, imuDriveHeading, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 100, 0, motorSpeedMaxRpm / 2, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, true};
     break;
   case AVOID_OBSTACLE:
-    taskActions[0] = {STATE_DRIVING, 50, 0, -motorSpeedMaxRpm / 3, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
-    taskActions[1] = {STATE_ROLL, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, false};
-    taskActions[2] = {STATE_ARC, 0, 100, motorSpeedMaxRpm / 3, imuDriveHeading, 180, NotStarted, None, 0, 0, false};
-    taskActions[3] = {STATE_ARC, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 25, 0, -motorSpeedMaxRpm, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[1] = {STATE_ROLL, 0, 0, motorSpeedMaxRpm, B1111, -720, 90, NotStarted, None, 0, 0, false};
+    taskActions[2] = {STATE_ARC, 0, ArcRadius*2*100, motorSpeedMaxRpm, B1111, imuDriveHeading, 180, NotStarted, None, 0, 0, false};
+    taskActions[3] = {STATE_ARC, 0, 0, motorSpeedMaxRpm, B1111, -720, 90, NotStarted, None, 0, 0, true};
     break;
   case TURN:
-    taskActions[0] = {STATE_DRIVING, 50, -1, -motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
-    taskActions[1] = {STATE_ROLL, 0, -1, motorSpeedMaxRpm, -720, 90, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 50, -1, -motorSpeedMaxRpm, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[1] = {STATE_ARC, 0, 100, motorSpeedMaxRpm, B1111, -720, turnAngle, NotStarted, None, 0, 0, true};
     break;
   default:
-    taskActions[0] = {STATE_OFF, 0, 0, 0, -720, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, -720, -720, NotStarted, None, 0, 0, true};
     break;
   } // end switch (newTask)
 } else {
   switch (newTask)
   {
   case WAITING:
-    taskActions[0] = {STATE_OFF, 0, 0, 0, -720, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, -720, -720, NotStarted, None, 0, 0, true};
     break;
   case DRIVE:
-    taskActions[0] = {STATE_DRIVING, 5, 0, motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 5, 0, motorSpeedMaxRpm, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, true};
     break;
   case AVOID_OBSTACLE:
-    taskActions[0] = {STATE_DRIVING, 5, 0, -motorSpeedMaxRpm / 3, imuDriveHeading, -720, NotStarted, None, 0, 0,false};
-    taskActions[1] = {STATE_ROLL, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, false};
-    taskActions[2] = {STATE_ARC, 0, 100, motorSpeedMaxRpm / 3, imuDriveHeading, 180, NotStarted, None, 0, 0,false};
-    taskActions[3] = {STATE_ARC, 0, 0, motorSpeedMaxRpm / 3, -720, 90, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 5, 0, -motorSpeedMaxRpm / 3, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[1] = {STATE_ROLL, 0, 0, motorSpeedMaxRpm / 3, B1111, -720, 90, NotStarted, None, 0, 0, false};
+    taskActions[2] = {STATE_ARC, 0, 100, motorSpeedMaxRpm / 3, B1111, imuDriveHeading, 180, NotStarted, None, 0, 0, false};
+    taskActions[3] = {STATE_ARC, 0, 0, motorSpeedMaxRpm / 3, B1111, -720, 90, NotStarted, None, 0, 0, true};
     break;
   case TURN:
-    taskActions[0] = {STATE_DRIVING, 5, -1, -motorSpeedMaxRpm, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
-    taskActions[1] = {STATE_ROLL, 0, -1, motorSpeedMaxRpm, -720, 90, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_DRIVING, 5, -1, -motorSpeedMaxRpm, B1111, imuDriveHeading, -720, NotStarted, None, 0, 0, false};
+    taskActions[1] = {STATE_ROLL, 0, -1, motorSpeedMaxRpm, B1111, -720, 90, NotStarted, None, 0, 0, true};
     break;
   default:
-    taskActions[0] = {STATE_OFF, 0, 0, 0, -720, -720, NotStarted, None, 0, 0, true};
+    taskActions[0] = {STATE_OFF, 0, 0, 0, B1111, -720, -720, NotStarted, None, 0, 0, true};
     break;
   } // end switch (newTask)
 }
@@ -2991,9 +2992,11 @@ void Robot::requestNextState()
   {
     if (developerActive)
     {
-      ShowMessageln("Lastresult was success");
-      ShowMessage("Distance: ");
-      ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
+      ShowMessageln("Rollback was success. Retrying with different parameters");
+      ShowMessage("Distance completed (L/R): ");
+      ShowMessage(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
+      ShowMessage(" / ");
+      ShowMessage(taskActions[TaskActionIndex].ActualDistanceWheelRight);
       ShowMessage("Action was a rollback: ");
       ShowMessageln(taskRollBack);
     }
@@ -3020,10 +3023,6 @@ void Robot::requestNextState()
       if (developerActive)
       {
         ShowMessageln("Rollback was success. Retrying with different parameters");
-        ShowMessage("Distance: ");
-        ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
-        ShowMessage("Action was a rollback: ");
-        ShowMessageln(taskRollBack);
       }
       taskRollBack = false;
       taskRetryCounter++;
@@ -3045,6 +3044,12 @@ void Robot::requestNextState()
           // give up and turn into a new lane
           setNewTask(TURN, false);
         }
+        if (developerActive)
+        {
+          ShowMessage("Retry number ");
+          ShowMessageln(taskRetryCounter);
+        }
+        setNextState(taskActions[TaskActionIndex].state, false, false);
         }
     }
     else
@@ -3097,15 +3102,15 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     ShowMessageln(stateNames[stateCurr]);
     ShowMessage("Next state would be ");
     ShowMessageln(stateNames[stateNew]);
-    ShowMessage("Distance: ");
+    ShowMessage("New Distance: ");
     ShowMessageln(taskActions[TaskActionIndex].Distance);
-    ShowMessage("Diameter: ");
+    ShowMessage("New Diameter: ");
     ShowMessageln(taskActions[TaskActionIndex].Diameter);
-    ShowMessage("Speed: ");
+    ShowMessage("New Speed: ");
     ShowMessageln(taskActions[TaskActionIndex].Speed);
-    ShowMessage("Heading: ");
+    ShowMessage("New Heading: ");
     ShowMessageln(taskActions[TaskActionIndex].Heading);
-    ShowMessage("Angle: ");
+    ShowMessage("New Angle: ");
     ShowMessageln(taskActions[TaskActionIndex].Angle);
   }
   byte dir = LEFT; // should be removed
@@ -3117,6 +3122,9 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
   float RatioSpeedLeft;
   float RatioSpeedRight;
   float Direction;
+
+//testRon
+leftOdoCompleted = rightOdoCompleted = false;
 
   //TaskActionIndex++;
   //stateTime = millis() - stateStartTime; //last state duration
@@ -3185,16 +3193,29 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     //     MyRpi.SendStatusToPi();
     // }
 
-    UseAccelRight = 1;
-    UseAccelLeft = 1;
-    UseBrakeLeft = 1;
-    UseBrakeRight = 1;
+    UseAccelLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 3);
+    UseAccelRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 2);
+    UseBrakeLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 1);
+    UseBrakeRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 0);
     motorRightSpeedRpmSet = taskActions[TaskActionIndex].Speed;
     motorLeftSpeedRpmSet = taskActions[TaskActionIndex].Speed;
+
+    if (developerActive)
+    {
+      ShowMessage("UseAccelLeft: ");
+      ShowMessageln(UseAccelLeft);
+      ShowMessage("UseAccelRight: ");
+      ShowMessageln(UseAccelRight);
+      ShowMessage("UseBrakeLeft: ");
+      ShowMessageln(UseBrakeLeft);
+      ShowMessage("UseBrakeRight: ");
+      ShowMessageln(UseBrakeRight);
+    }
+
     //bber60
 
-    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * (taskActions[TaskActionIndex].Distance)); // set a very large distance 300 ml for random mowing
-    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * (taskActions[TaskActionIndex].Distance));
+    stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * abs(taskActions[TaskActionIndex].Distance) * (taskActions[TaskActionIndex].Speed / abs((taskActions[TaskActionIndex].Speed)))); // set a very large distance 300 ml for random mowing
+    stateEndOdometryLeft = odometryLeft + (int)(odometryTicksPerCm * abs(taskActions[TaskActionIndex].Distance) * (taskActions[TaskActionIndex].Speed / abs((taskActions[TaskActionIndex].Speed))));
     // if ((mowPatternCurr == MOW_LANES) && (!justChangeLaneDir))
     // {                                                                                               //it s a not new lane so limit the forward distance
     //   stateEndOdometryRight = odometryRight + (int)(odometryTicksPerCm * actualLenghtByLane * 100); //limit the lenght
@@ -3207,16 +3228,29 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
 
     break;
   case STATE_ARC:
-    UseAccelLeft = 1;
-    UseBrakeLeft = 1;
-    UseAccelRight = 1;
-    UseBrakeRight = 1;
+    UseAccelRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 3);
+    UseAccelLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 2);
+    UseBrakeLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 1);
+    UseBrakeRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 0);
+    if (developerActive)
+    {
+      ShowMessage("UseAccelLeft: ");
+      ShowMessageln(UseAccelLeft);
+      ShowMessage("UseAccelRight: ");
+      ShowMessageln(UseAccelRight);
+      ShowMessage("UseBrakeLeft: ");
+      ShowMessageln(UseBrakeLeft);
+      ShowMessage("UseBrakeRight: ");
+      ShowMessageln(UseBrakeRight);
+    }
     // motorLeftSpeedRpmSet = motorRightSpeedRpmSet = -motorSpeedMaxRpm / 2;
     // stateEndOdometryRight = odometryRight - (odometryTicksPerCm * stationRevDist);
     // stateEndOdometryLeft = odometryLeft - (odometryTicksPerCm * stationRevDist);
     // int AngleRotate = taskActions[TaskActionIndex].Angle ;
-    RatioSpeedLeft = taskActions[TaskActionIndex].Angle + 0.5 * odometryWheelBaseCm;
-    RatioSpeedRight = taskActions[TaskActionIndex].Angle - 0.5 * odometryWheelBaseCm;
+
+    // calculate angle based on heading
+
+
     if (taskActions[TaskActionIndex].Angle != 0)
     {
       Direction = taskActions[TaskActionIndex].Angle / abs(taskActions[TaskActionIndex].Angle);
@@ -3225,15 +3259,32 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     {
       Direction = 1;
     }
-    motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * taskActions[TaskActionIndex].Speed;
-    motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * taskActions[TaskActionIndex].Speed;
+    RatioSpeedLeft = taskActions[TaskActionIndex].Angle + 0.5 * odometryWheelBaseCm;
+    RatioSpeedRight = taskActions[TaskActionIndex].Angle - 0.5 * odometryWheelBaseCm;
+    motorLeftSpeedRpmSet = RatioSpeedLeft / RatioSpeedRight * taskActions[TaskActionIndex].Speed * Direction;
+    motorRightSpeedRpmSet = RatioSpeedRight / RatioSpeedLeft * taskActions[TaskActionIndex].Speed * Direction;
 
     // stateEndOdometryLeft = odometryLeft + (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     // stateEndOdometryRight = odometryRight - (int)100 * (odometryTicksPerCm * PI * odometryWheelBaseCm / Tempovar);
     stateEndOdometryLeft = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter + odometryWheelBaseCm * Direction);
     stateEndOdometryRight = taskActions[TaskActionIndex].Angle / 360 * PI * (taskActions[TaskActionIndex].Diameter - odometryWheelBaseCm * Direction);
 
-    
+    if (developerActive)
+    {
+      ShowMessage("MotorLeftSpeed: ");
+      ShowMessageln(motorLeftSpeedRpmSet);
+      ShowMessage("MotorRightSpeed: ");
+      ShowMessageln(motorRightSpeedRpmSet);
+      ShowMessage("stateEndOdometryLeft: ");
+      ShowMessageln(stateEndOdometryLeft);
+      ShowMessage("stateEndOdometryRight: ");
+      ShowMessageln(stateEndOdometryRight);
+      ShowMessage("Angle: ");
+      ShowMessageln(taskActions[TaskActionIndex].Angle);
+      ShowMessage("Diameter (cm): ");
+      ShowMessageln(taskActions[TaskActionIndex].Diameter);
+    }
+
     OdoRampCompute();
     break;
 
@@ -4152,10 +4203,21 @@ void Robot::setNextState(byte stateNew, boolean rollBack, boolean reTry)
     // AngleRotate = random(50, 180);
     //AngleRotate = TaskActionIndex.Angle
     Tempovar = 36000 / abs(taskActions[TaskActionIndex].Angle); //need a value*100 for integer division later
-    UseAccelLeft = 1;
-    UseBrakeLeft = 1;
-    UseAccelRight = 1;
-    UseBrakeRight = 1;
+    UseAccelRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 3);
+    UseAccelLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 2);
+    UseBrakeLeft = bitRead(taskActions[TaskActionIndex].AccellBrake, 1);
+    UseBrakeRight = bitRead(taskActions[TaskActionIndex].AccellBrake, 0);
+    if (developerActive)
+    {
+      ShowMessage("UseAccelLeft: ");
+      ShowMessageln(UseAccelLeft);
+      ShowMessage("UseAccelRight: ");
+      ShowMessageln(UseAccelRight);
+      ShowMessage("UseBrakeLeft: ");
+      ShowMessageln(UseBrakeLeft);
+      ShowMessage("UseBrakeRight: ");
+      ShowMessageln(UseBrakeRight);
+    }
     if (taskActions[TaskActionIndex].Angle > -1)
     {
 
@@ -5143,13 +5205,19 @@ void Robot::checkTilt() {
 
 //Calculate Odo Movement
 void Robot::calcOdoMovement(){
+
+  // nextTimeCalcOdoMovement
+  if ((millis() < nextTimeCalcOdoMovement))
+    return;
+  nextTimeCalcOdoMovement = millis() + 300;
   // Evaluate if we are standing still
   if ((motorLeftPWMCurr == 0) && (motorRightPWMCurr == 0))
   {
     if (developerActive)
     {
-      ShowMessageln("Detected Standstill. PWM: ");
-      ShowMessageln(motorLeftPWMCurr);
+      ShowMessage("Detected Standstill. PWM (L/R): ");
+      ShowMessage(motorLeftPWMCurr);
+      ShowMessage(" / ");
       ShowMessageln(motorRightPWMCurr);
     }
     standingStill = true;
@@ -5162,8 +5230,14 @@ void Robot::calcOdoMovement(){
   // Calculate if Odometry has passed the desired end state
   //     if (motorLeftSpeedRpmSet == 0 || motorRightSpeedRpmSet == 0)
   // {
-  if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryLeft - odometryLeft < 0)
+  int TicksLeftRemaining = (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed)) * (stateEndOdometryLeft - odometryLeft);
+  int TicksRightRemaining = (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed)) * (stateEndOdometryRight - odometryRight);
+  if (TicksLeftRemaining < 5)
   {
+    {
+      ShowMessage("Left odo completed. Remaining ticks:");
+      ShowMessageln(TicksLeftRemaining);
+    }
     leftOdoCompleted = true;
   }
   else
@@ -5171,8 +5245,13 @@ void Robot::calcOdoMovement(){
     leftOdoCompleted = false;
   }
 
-  if (taskActions[TaskActionIndex].Speed / abs(taskActions[TaskActionIndex].Speed) * stateStartOdometryRight - odometryRight < 0)
+  if (TicksRightRemaining < 5)
   {
+    if (developerActive)
+    {
+      ShowMessage("Right odo completed. Remaining ticks:");
+      ShowMessageln(TicksRightRemaining);
+    }
     rightOdoCompleted = true;
   }
   else
@@ -5181,8 +5260,26 @@ void Robot::calcOdoMovement(){
   }
   // }
   //calculate distance in cm since last state change and note this on the current task action
-  taskActions[TaskActionIndex].ActualDistanceWheelLeft = abs(odometryLeft - stateStartOdometryLeft) * int(odometryTicksPerCm);
-  taskActions[TaskActionIndex].ActualDistanceWheelRight = abs(odometryRight - stateStartOdometryRight) * int(odometryTicksPerCm);
+  taskActions[TaskActionIndex].ActualDistanceWheelLeft = abs(odometryLeft - stateStartOdometryLeft) / odometryTicksPerCm;
+  taskActions[TaskActionIndex].ActualDistanceWheelRight = abs(odometryRight - stateStartOdometryRight) / odometryTicksPerCm;
+
+  // if (developerActive)
+  // {
+  //   ShowMessage("Travelled distance (L/R): ");
+  //   ShowMessage(taskActions[TaskActionIndex].ActualDistanceWheelLeft);
+  //   ShowMessage(" / ");
+  //   ShowMessageln(taskActions[TaskActionIndex].ActualDistanceWheelRight);
+  //   ShowMessage("Odo ticks left: ");
+  //   ShowMessageln(abs(odometryLeft - stateStartOdometryLeft));
+  //   ShowMessage("Odo ticks left remaining: ");
+  //   ShowMessageln(TicksLeftRemaining);
+  //   ShowMessage("Odo ticks right: ");
+  //   ShowMessageln(abs(odometryRight - stateStartOdometryRight));
+  //   ShowMessage("Odo ticks right remaining: ");
+  //   ShowMessageln(TicksRightRemaining);
+  //   ShowMessage("Ticks per cm: ");
+  //   ShowMessageln(int(odometryTicksPerCm));
+  // }
 }
 
 // check if mower is stuck ToDo: take HDOP into consideration if gpsSpeed is reliable

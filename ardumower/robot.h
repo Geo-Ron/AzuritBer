@@ -276,9 +276,10 @@ typedef struct taskTrigger_t taskTrigger_t;
 struct taskaction_t
 {
   byte state; // the robot state (action) to do
-  int Distance; //Distance in cm , 0 if not set
+  int Distance; //Distance in cm, always positive value , 0 if not set
   int Diameter; // Diameter of the circle to rotate in cm. 0 if not set
   int Speed;    // Speed in RPM
+  byte AccellBrake; // binary representation of accelLeft,accelRight,brakeLeft,brakeRight, B1100 or B0011 or a combination
   // int DistanceWheelLeft;  //Calculated Distance in cm, -10 if not set
   // int DistanceWheelRight; //Calculated Distance in cm, -1 if not set
   // int SpeedWheelLeft;     //Target wheel speed in rpm, always defined
@@ -401,6 +402,7 @@ class Robot
     unsigned long lastMotorRpmTime ;
     unsigned long nextTimeOdometry ;
     unsigned long nextTimeOdometryInfo ;
+    unsigned long nextTimeCalcOdoMovement;
     //bb
     int stateEndOdometryRight;  // use to mesure the distance when rev roll etc ...
     int stateEndOdometryLeft;
