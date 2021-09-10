@@ -1559,6 +1559,7 @@ void Robot::motorControlOdo()
 
   // call to reach a ODO cible on left AND right wheel so they don't stop at the same time accel and slow are used to smooth the movement of the mower
   //Stop motor independently when the cible is reach
+  // Cible if French for target
   //
   if (UseBrakeLeft && (motorLeftSpeedRpmSet >= 0) && (stateEndOdometryLeft - odometryLeft <= -10))
   { //Forward left need -10 because when stop the ticks can move in+ or- so do not stop before
@@ -2193,7 +2194,8 @@ void Robot::motorControl()
   motorLeftPID.w = motorLeftSpeedRpmSet;   // SOLL
   motorRightPID.w = motorRightSpeedRpmSet; // SOLL
 
-  float RLdiff = motorLeftRpmCurr - motorRightRpmCurr;
+  //float RLdiff = motorLeftRpmCurr - motorRightRpmCurr;
+  float RLdiff = 0;
 
   if (motorLeftSpeedRpmSet == motorRightSpeedRpmSet)
   {
